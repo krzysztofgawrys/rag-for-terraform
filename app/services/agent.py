@@ -670,7 +670,7 @@ async def agent_stream_query(
         initial_context, initial_modules = await _build_initial_context(request, db)
     except Exception as exc:
         log.exception("agent_initial_context_error")
-        yield f"data: {_json.dumps({'type': 'error', 'message': f'Failed to build initial context: {exc}'})}\n\n"
+        yield f"data: {_json.dumps({'type': 'error', 'message': 'Failed to build initial context'})}\n\n"
         yield f"data: {_json.dumps({'type': 'done', 'latency_ms': int((time.monotonic() - t0) * 1000), 'ok': False})}\n\n"
         return
 
@@ -783,8 +783,8 @@ async def agent_stream_query(
             yield f"data: {_json.dumps({'type': 'token', 'token': f'\\n\\n---\\n*Agent reached maximum of {max_turns} turns. Output may be incomplete.*'})}\n\n"
 
     except Exception as exc:
-        error_message = f"{type(exc).__name__}: {exc}"
-        log.exception("agent_loop_error", turn=turn, backend=backend, error=error_message)
+        log.exception("agent_loop_error", turn=turn, backend=backend, error=f"{type(exc).__name__}: {exc}")
+        error_message = "Internal error while generating response"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     if error_message:

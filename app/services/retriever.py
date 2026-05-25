@@ -621,8 +621,8 @@ async def stream_query(request: QueryRequest, db):
         async for chunk in llm.astream(prompt, system=system, max_tokens=16384):
             yield f"data: {_json.dumps({'type': 'token', 'token': chunk})}\n\n"
     except Exception as exc:
-        error_message = f"{type(exc).__name__}: {exc}"
-        log.exception("stream_query_llm_error", error=error_message)
+        log.exception("stream_query_llm_error", error=f"{type(exc).__name__}: {exc}")
+        error_message = "Internal error while generating response"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     if error_message:

@@ -125,7 +125,7 @@ export class ChipSelect {
   private renderField(): void {
     const chips = [...this.selected];
     if (!chips.length) {
-      this.field.innerHTML = `<span class="chip-select-placeholder">${this.field.querySelector('.chip-select-placeholder')?.textContent || 'select...'}</span>`;
+      this.field.innerHTML = `<span class="chip-select-placeholder">${esc(this.field.querySelector('.chip-select-placeholder')?.textContent || 'select...')}</span>`;
       return;
     }
     this.field.innerHTML = chips
