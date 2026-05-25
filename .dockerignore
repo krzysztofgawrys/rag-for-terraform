@@ -1,0 +1,67 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+env
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Frontend (built separately)
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Local config
+.env
+.env.local
+.env.*.local
+worker_deploy_key
+worker_deploy_key.pub
+*.pem
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs / build artifacts
+docs
+TIER_PROGRESS.md
+*.md
+!CLAUDE.md
+
+# Terraform local state (if any)
+terraform/.terraform
+terraform/*.tfstate*
+
+# Test outputs
+.coverage
+htmlcov
+.tox
+
+# Logs
+*.log
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI
+.github

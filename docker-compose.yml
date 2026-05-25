@@ -1,0 +1,102 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      args:
+        EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-m-v2.0}
+        HF_TOKEN: ${HF_TOKEN:-}
+    # Dev: override the production gunicorn CMD with uvicorn + reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./migrations:/app/migrations
+      - ./scripts:/app/scripts
+      - repo_cache:/tmp/repo_cache
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      args:
+        EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-m-v2.0}
+        HF_TOKEN: ${HF_TOKEN:-}
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    env_file: .env
+    environment:
+      # Forces correct SSH key permissions without changing the file on host
+      GIT_SSH_COMMAND: "ssh -i /run/secrets/deploy_key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./migrations:/app/migrations
+      - ./scripts:/app/scripts
+      - repo_cache:/tmp/repo_cache
+    secrets:
+      - deploy_key
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-terraform_rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-terraform_rag}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-terraform_rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+secrets:
+  deploy_key:
+    file: ${SSH_KEY_PATH:-./worker_deploy_key}
+
+volumes:
+  postgres_data:
+  redis_data:
+  repo_cache:

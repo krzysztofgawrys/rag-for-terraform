@@ -1,0 +1,127 @@
+# =============================================================================
+# Secrets & local config — NEVER commit
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+worker_deploy_key
+worker_deploy_key.pub
+secrets/
+.secrets/
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# Test / coverage / type-checker caches
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =============================================================================
+# Node / frontend
+# =============================================================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/stats.html
+
+# Lockfile policy: keep package-lock.json committed.
+# npm/yarn debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =============================================================================
+# Editors / IDEs
+# =============================================================================
+.vscode/
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# Claude Code / AI tooling
+# =============================================================================
+.mcp.json
+.claude/settings.local.json
+.claude/cache/
+.claude/logs/
+.claude/transcripts/
+# Keep .claude/settings.json (shared) and skills/ committed.
+
+# =============================================================================
+# Docker / runtime data
+# =============================================================================
+# Bind-mounted volumes from docker-compose (if any are written into the repo)
+postgres_data/
+redis_data/
+.docker/
+
+# =============================================================================
+# Logs & temp
+# =============================================================================
+*.log
+logs/
+tmp/
+.tmp/
+*.tmp
+*.bak
+*.orig
+
+# =============================================================================
+# Project-specific
+# =============================================================================
+# Local clones used for ad-hoc analysis (not part of the codebase)
+/tmp-analysis/
+*.tf-analysis/
+
+# Embedding model cache (sentence-transformers downloads to ~/.cache by default,
+# but if anyone overrides HF_HOME inside the repo, ignore it)
+.hf_cache/
+.sentence_transformers/
+/models/
+
+# Local SSH known_hosts seeded into the worker
+known_hosts.local

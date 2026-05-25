@@ -1,0 +1,32 @@
+name: Terraform RAG — Auto Index
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - "tags.txt"
+      - ".tags"
+
+jobs:
+  notify-rag-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger RAG indexing
+        run: |
+          curl -X POST "${{ secrets.RAG_BACKEND_URL }}/index/" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.RAG_API_KEY }}" \
+            -d '{
+              "repo_url": "${{ github.server_url }}/${{ github.repository }}.git",
+              "branch": "${{ github.ref_name }}",
+              "commit_sha": "${{ github.sha }}",
+              "triggered_by": "github_actions"
+            }'
+
+# Alternatively — use a webhook directly from GitHub Settings → Webhooks:
+# URL: https://your-backend/webhook/github
+# Content-Type: application/json
+# Secret: GITHUB_WEBHOOK_SECRET from .env
+# Events: Just the push event

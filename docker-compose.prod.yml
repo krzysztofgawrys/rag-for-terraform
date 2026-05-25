@@ -1,0 +1,155 @@
+# Production stack for terraform-rag.
+#
+# Differences vs docker-compose.yml (dev):
+#   - No bind mounts of source code (image is self-contained)
+#   - Postgres / Redis ports NOT exposed to host
+#   - Resource limits on every service
+#   - Restart policy: always
+#   - Gunicorn workers via env (default 4)
+#   - Read-only filesystems where possible
+#   - Frontend served by its own nginx container behind same network
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+x-restart: &restart
+  restart: always
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-m-v2.0}
+        HF_TOKEN: ${HF_TOKEN:-}
+    image: terraform-rag:latest
+    env_file: .env
+    environment:
+      GUNICORN_WORKERS: ${API_WORKERS:-4}
+    command: >
+      gunicorn app.main:app
+      --bind 0.0.0.0:8000
+      --workers ${API_WORKERS:-4}
+      --worker-class uvicorn.workers.UvicornWorker
+      --timeout 120
+      --graceful-timeout 30
+      --keep-alive 5
+      --access-logfile -
+      --error-logfile -
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    volumes:
+      - repo_cache:/tmp/repo_cache
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+        reservations:
+          memory: 1G
+    <<: [*restart, *logging]
+
+  worker:
+    image: terraform-rag:latest
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-4}
+    env_file: .env
+    environment:
+      GIT_SSH_COMMAND: "ssh -i /run/secrets/deploy_key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      api:      { condition: service_started }   # share image with api
+    volumes:
+      - repo_cache:/tmp/repo_cache
+    secrets:
+      - deploy_key
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G        # PyTorch + embeddings can spike
+        reservations:
+          memory: 1G
+    <<: [*restart, *logging]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-terraform_rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-terraform_rag}
+    # NO host port exposure in prod — only accessible inside docker network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-terraform_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    <<: [*restart, *logging]
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    <<: [*restart, *logging]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: terraform-rag-frontend:latest
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    <<: [*restart, *logging]
+
+secrets:
+  deploy_key:
+    file: ${SSH_KEY_PATH:-./worker_deploy_key}
+
+volumes:
+  postgres_data:
+  redis_data:
+  repo_cache:

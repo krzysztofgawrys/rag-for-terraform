@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terraform RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-icon">&#x2B21;</span>
+    Terraform<span>RAG</span>
+  </div>
+  <div class="status-dot" id="statusDot" title="API status"></div>
+  <div class="user-info" id="userInfo" style="display:none">
+    <span id="userEmail" style="font-size:11px;color:var(--text2)"></span>
+    <span id="userRole" style="font-size:10px;color:var(--text3);background:var(--bg2);padding:1px 6px;border-radius:3px"></span>
+    <button id="logoutBtn" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text3);font:inherit;font-size:10px;padding:2px 8px;cursor:pointer">Logout</button>
+  </div>
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">
+    <span class="theme-icon" id="themeIcon">&#x263E;</span>
+  </button>
+  <nav>
+    <button class="active" data-page="modules">Modules</button>
+    <button data-page="knowledge">Knowledge</button>
+    <button data-page="query">Query</button>
+    <button data-page="jobs">Index Jobs</button>
+    <button data-page="usage">Index Usage</button>
+    <button data-page="auditlogs">Audit Logs</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- Stats bar -->
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><div class="stat-label">Modules</div><div class="stat-value green" id="s-modules">&mdash;</div></div>
+  <div class="stat"><div class="stat-label">Repos</div><div class="stat-value" id="s-repos">&mdash;</div></div>
+  <div class="stat"><div class="stat-label">Unique Tags</div><div class="stat-value orange" id="s-tags">&mdash;</div></div>
+  <div class="stat"><div class="stat-label">Resource Types</div><div class="stat-value" id="s-res">&mdash;</div></div>
+  <div class="stat"><div class="stat-label">Versions</div><div class="stat-value" id="s-versions" style="color:var(--purple)">&mdash;</div></div>
+  <div class="stat"><div class="stat-label">Conventions</div><div class="stat-value" id="s-conventions" style="color:var(--purple)">&mdash;</div></div>
+  <div class="stat"><div class="stat-label">Usages</div><div class="stat-value" id="s-usages" style="color:var(--blue)">&mdash;</div></div>
+</div>
+
+<!-- MODULES PAGE -->
+<div class="page active" id="page-modules">
+  <div class="two-panel">
+    <div class="panel-left">
+      <div class="section-header">
+        Modules <span class="badge" id="moduleCount">0</span>
+      </div>
+      <div style="margin-bottom:4px">
+        <select id="versionFilter" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text2);font:inherit;font-size:11px;padding:4px 6px;cursor:pointer">
+          <option value="">all versions</option>
+        </select>
+      </div>
+      <div style="margin-bottom:4px">
+        <select id="repoFilter" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text2);font:inherit;font-size:11px;padding:4px 6px;cursor:pointer">
+          <option value="">all repos</option>
+        </select>
+      </div>
+      <div class="search-input">
+        <span class="search-icon">&#x2315;</span>
+        <input type="text" id="moduleSearch" placeholder="filter by name, tag, repo...">
+      </div>
+      <div id="moduleList"></div>
+    </div>
+    <div class="panel-right">
+      <div class="section-header">Detail</div>
+      <div id="moduleDetail" class="module-detail">
+        <div class="placeholder-msg">
+          <span class="icon">&#x2B21;</span>
+          <div>Select a module to inspect</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QUERY PAGE -->
+<div class="page" id="page-query">
+  <div class="query-layout">
+    <div class="query-input-panel">
+      <div class="section-header">Query</div>
+      <div class="query-form">
+        <div>
+          <div class="form-label">Type</div>
+          <div class="type-grid" id="typeGrid">
+            <button class="type-btn active" data-type="compose">
+              <span class="type-icon">&#x29C9;</span>Compose
+            </button>
+            <button class="type-btn" data-type="optimize">
+              <span class="type-icon">&#x27F3;</span>Optimize
+            </button>
+            <button class="type-btn" data-type="audit">
+              <span class="type-icon">&#x2691;</span>Audit
+            </button>
+            <button class="type-btn" data-type="search">
+              <span class="type-icon">&#x2315;</span>Search
+            </button>
+          </div>
+        </div>
+        <div>
+          <div class="form-label">Query</div>
+          <textarea id="queryText" placeholder="e.g. Create an S3 bucket with versioning and KMS encryption, following patterns from existing modules..."></textarea>
+        </div>
+        <div>
+          <div class="form-label">Repo filter</div>
+          <div id="queryRepoFilter"></div>
+        </div>
+        <div>
+          <div class="form-label">Tag filter</div>
+          <div id="queryTagFilter"></div>
+        </div>
+        <div>
+          <div class="form-label">Version filter</div>
+          <div id="queryVersionFilter"></div>
+        </div>
+        <button class="run-btn" id="runBtn">
+          <span>&#x25B6; Run</span>
+        </button>
+        <button class="stop-btn" id="stopBtn" style="display:none">
+          <span>&#x25A0; Stop</span>
+        </button>
+      </div>
+    </div>
+    <div class="query-output-panel">
+      <div class="section-header">Output</div>
+      <div class="output-area" id="outputArea">
+        <div class="placeholder-msg">
+          <span class="icon">&#x2726;</span>
+          <div>Run a query to see results</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JOBS PAGE -->
+<div class="page" id="page-jobs">
+  <div class="jobs-page">
+    <div class="index-form">
+      <div class="index-form-title">Index Repository</div>
+      <div>
+        <div class="form-label">Repository URL</div>
+        <input type="text" id="repoUrl" placeholder="git@github.com:org/tf-modules.git">
+      </div>
+      <div class="form-row">
+        <div style="flex:1">
+          <div class="form-label">Branch</div>
+          <input type="text" id="repoBranch" value="main">
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer">
+        <input type="checkbox" id="discoverTags" checked style="cursor:pointer">
+        Discover &amp; index all git tags (versions)
+      </label>
+      <button class="run-btn" id="indexBtn">
+        <span>&#x2B07; Start Indexing</span>
+      </button>
+    </div>
+    <div class="section-header" style="position:relative">
+      Recent Jobs
+      <button id="refreshJobsBtn" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:3px;color:var(--text3);font:inherit;font-size:10px;padding:2px 8px;cursor:pointer">&#x21BB; Refresh</button>
+    </div>
+    <table class="jobs-table">
+      <thead>
+        <tr>
+          <th>Repo</th><th>Branch</th><th>Commit</th>
+          <th>Status</th><th>Triggered by</th><th>Modules</th><th>Started</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="jobsBody">
+        <tr class="loading-row"><td colspan="7" style="text-align:center;padding:20px">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- KNOWLEDGE PAGE -->
+<div class="page" id="page-knowledge">
+  <div class="two-panel">
+    <div class="panel-left">
+      <div class="section-header">
+        Module Refs <span class="badge" id="knowledgeCount">0</span>
+      </div>
+      <div style="margin-bottom:4px">
+        <select id="knowledgeKindFilter" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text2);font:inherit;font-size:11px;padding:4px 6px;cursor:pointer">
+          <option value="">all kinds</option>
+          <option value="usage">usage</option>
+          <option value="convention.">conventions</option>
+        </select>
+      </div>
+      <div style="margin-bottom:4px">
+        <select id="knowledgeRepoFilter" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text2);font:inherit;font-size:11px;padding:4px 6px;cursor:pointer">
+          <option value="">all consumer repos</option>
+        </select>
+      </div>
+      <div class="search-input">
+        <span class="search-icon">&#x2315;</span>
+        <input type="text" id="knowledgeSearch" placeholder="filter by module ref...">
+      </div>
+      <div id="knowledgeList"></div>
+    </div>
+    <div class="panel-right">
+      <div class="section-header">Detail</div>
+      <div id="knowledgeDetail" class="module-detail">
+        <div class="placeholder-msg">
+          <span class="icon">&#x1F4D6;</span>
+          <div>Select a module ref to inspect knowledge</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- USAGE PAGE -->
+<div class="page" id="page-usage">
+  <div class="jobs-page">
+    <div class="index-form">
+      <div class="index-form-title">Index Consumer Repository</div>
+      <div>
+        <div class="form-label">Consumer Repo URL</div>
+        <input type="text" id="consumerRepoUrl" placeholder="git@github.com:org/tf-infra-prod.git">
+      </div>
+      <div class="form-row">
+        <div style="flex:1">
+          <div class="form-label">Branch</div>
+          <input type="text" id="consumerRepoBranch" value="main">
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer">
+        <input type="checkbox" id="runDistillation" checked style="cursor:pointer">
+        Run convention distillation after indexing
+      </label>
+      <button class="run-btn" id="consumerIndexBtn">
+        <span>&#x2B07; Index Usage</span>
+      </button>
+    </div>
+
+    <div class="section-header" style="position:relative;margin-top:16px">
+      Consumer Jobs
+      <button id="refreshConsumerJobsBtn" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:3px;color:var(--text3);font:inherit;font-size:10px;padding:2px 8px;cursor:pointer">&#x21BB; Refresh</button>
+    </div>
+    <table class="jobs-table">
+      <thead>
+        <tr>
+          <th>Repo</th><th>Branch</th><th>Status</th>
+          <th>Usages</th><th>Distillation</th><th>Started</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="consumerJobsBody">
+        <tr class="loading-row"><td colspan="7" style="text-align:center;padding:20px">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- AUDIT LOGS PAGE -->
+<div class="page" id="page-auditlogs">
+  <div class="jobs-page">
+    <div class="section-header" style="position:relative">
+      Audit Logs
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <select id="auditCategoryFilter" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text2);font:inherit;font-size:10px;padding:2px 8px;cursor:pointer">
+          <option value="">all categories</option>
+          <option value="mcp">mcp</option>
+          <option value="worker">worker</option>
+          <option value="llm">llm</option>
+        </select>
+        <select id="auditStatusFilter" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text2);font:inherit;font-size:10px;padding:2px 8px;cursor:pointer">
+          <option value="">all statuses</option>
+          <option value="success">success</option>
+          <option value="error">error</option>
+        </select>
+        <button id="refreshAuditBtn" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text3);font:inherit;font-size:10px;padding:2px 8px;cursor:pointer">&#x21BB; Refresh</button>
+      </div>
+    </div>
+    <table class="jobs-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th><th>Category</th><th>Action</th>
+          <th>Status</th><th>Duration</th><th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="auditLogsBody">
+        <tr class="loading-row"><td colspan="6" style="text-align:center;padding:20px">Loading...</td></tr>
+      </tbody>
+    </table>
+    <div id="auditPagination" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:11px;color:var(--text3)">
+      <span id="auditTotal"></span>
+      <div style="display:flex;gap:6px">
+        <button id="auditPrevBtn" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text3);font:inherit;font-size:10px;padding:2px 10px;cursor:pointer" disabled>&#x25C0; Prev</button>
+        <button id="auditNextBtn" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text3);font:inherit;font-size:10px;padding:2px 10px;cursor:pointer">Next &#x25B6;</button>
+      </div>
+    </div>
+
+    <!-- Detail panel for expanded row -->
+    <div id="auditDetail" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px;margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)">Audit Log Detail</span>
+        <button id="auditDetailClose" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px">&#x2715;</button>
+      </div>
+      <div id="auditDetailContent" style="font-size:12px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN PAGE -->
+<div class="page" id="page-login">
+  <div style="max-width:360px;margin:80px auto">
+    <div style="text-align:center;margin-bottom:32px">
+      <span style="font-size:48px">&#x2B21;</span>
+      <h2 style="margin:8px 0 4px;font-weight:500">Terraform RAG</h2>
+      <p style="color:var(--text3);font-size:12px">Sign in to continue</p>
+    </div>
+    <form id="loginForm" style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <div class="form-label">Email</div>
+        <input type="email" id="loginEmail" required placeholder="admin@example.com"
+               style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text1);font:inherit;padding:8px 10px">
+      </div>
+      <div>
+        <div class="form-label">Password</div>
+        <input type="password" id="loginPassword" required placeholder="password"
+               style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text1);font:inherit;padding:8px 10px">
+      </div>
+      <button type="submit" id="loginBtn" class="run-btn" style="margin-top:8px">Login</button>
+    </form>
+  </div>
+</div>
+
+</main>
+
+<div id="toast"></div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
