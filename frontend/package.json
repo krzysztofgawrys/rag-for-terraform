@@ -9,13 +9,13 @@
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
-    "typescript": "^5.4",
-    "vite": "^5.4"
+    "typescript": "^5.9.3",
+    "vite": "^8.0.14"
   },
   "dependencies": {
     "d3": "^7.9.0",
     "highlight.js": "^11.11.1",
-    "marked": "^18.0.3",
+    "marked": "^18.0.4",
     "marked-highlight": "^2.2.4"
   }
 }
