@@ -1,6 +1,9 @@
 """
 Query layer — RAG search, code generation, dependency analysis.
 """
+import time
+from pathlib import Path
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,10 +11,14 @@ from sqlalchemy import text
 from pydantic import BaseModel
 from typing import Optional
 
+import yaml
+
 from app.core.vector_store import get_db
+from app.core.embeddings import embed_query
 from app.core.auth import AuthenticatedUser, require_user
 from app.services.retriever import query as run_query, stream_query as run_stream_query
 from app.core import graph as graph_db
+from app.core import vector_store as vs
 from app.models.schemas import QueryRequest, QueryResponse
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -130,3 +137,82 @@ async def knowledge_base_stats(user: AuthenticatedUser = require_user, db: Async
     snippet_row = dict(snippet_result.mappings().first())
 
     return {**row, **snippet_row, "top_tags": top_tags, "top_resources": top_resources}
+
+
+# -- Retrieval evaluation ------------------------------------------------------
+
+EVAL_FIXTURE_PATH = Path(__file__).resolve().parents[3] / "scripts" / "eval_queries.yaml"
+
+
+@router.post("/eval")
+async def eval_retrieval(
+    user: AuthenticatedUser = require_user,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run retrieval evaluation against the YAML fixture.
+
+    Tests retrieval only (embedding + similarity search) - no LLM calls.
+    Returns per-query hit/miss and aggregate recall.
+    """
+    if not EVAL_FIXTURE_PATH.exists():
+        return {"error": f"Fixture not found: {EVAL_FIXTURE_PATH}"}
+
+    with open(EVAL_FIXTURE_PATH) as f:
+        cases = yaml.safe_load(f)
+
+    if not isinstance(cases, list) or not cases:
+        return {"error": "Fixture must be a non-empty YAML list"}
+
+    results = []
+    for entry in cases:
+        query_text = entry.get("query", "")
+        query_type = entry.get("query_type", "compose")
+        expected_refs = entry.get("expected_refs", [])
+        top_k = entry.get("top_k", 5)
+        match_mode = entry.get("match", "any")
+
+        t0 = time.monotonic()
+        query_vec = embed_query(query_text, query_type=query_type)
+        similar = await vs.similarity_search(
+            db, query_embedding=query_vec, top_k=top_k,
+        )
+        latency_ms = int((time.monotonic() - t0) * 1000)
+
+        returned_refs = [
+            f"{s['repo']}/{s['module_path']}" for s in similar
+        ]
+        matched = [r for r in expected_refs if r in returned_refs]
+        missed = [r for r in expected_refs if r not in returned_refs]
+
+        if match_mode == "all":
+            hit = len(missed) == 0
+        else:
+            hit = len(matched) > 0
+
+        results.append({
+            "query": query_text,
+            "query_type": query_type,
+            "description": entry.get("description", ""),
+            "hit": hit,
+            "matched_refs": matched,
+            "missed_refs": missed,
+            "returned_refs": returned_refs,
+            "latency_ms": latency_ms,
+        })
+
+    total = len(results)
+    hits = sum(1 for r in results if r["hit"])
+    all_expected = sum(len(r["missed_refs"]) + len(r["matched_refs"]) for r in results)
+    all_matched = sum(len(r["matched_refs"]) for r in results)
+
+    return {
+        "summary": {
+            "total_queries": total,
+            "hits": hits,
+            "misses": total - hits,
+            "hit_rate_pct": round(hits / total * 100, 1) if total else 0,
+            "ref_recall_pct": round(all_matched / all_expected * 100, 1) if all_expected else 0,
+            "avg_latency_ms": sum(r["latency_ms"] for r in results) // total if total else 0,
+        },
+        "queries": results,
+    }

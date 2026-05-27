@@ -1,12 +1,22 @@
 import { apiFetch, esc, toast } from '../api';
-import type { Job } from '../types';
+import type { Job, PaginatedJobs } from '../types';
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const POLL_INTERVAL = 3000;
+let currentOffset = 0;
+const PAGE_SIZE = 20;
 
 export function initJobsPage(): void {
   document.getElementById('indexBtn')!.addEventListener('click', triggerIndex);
   document.getElementById('refreshJobsBtn')!.addEventListener('click', () => loadJobs());
+  document.getElementById('jobsPrevBtn')!.addEventListener('click', () => {
+    currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
+    loadJobs();
+  });
+  document.getElementById('jobsNextBtn')!.addEventListener('click', () => {
+    currentOffset += PAGE_SIZE;
+    loadJobs();
+  });
 }
 
 export function stopJobsPolling(): void {
@@ -26,16 +36,24 @@ function startPollingIfNeeded(jobs: Job[]): void {
 
 export async function loadJobs(silent = false): Promise<void> {
   try {
-    const jobs = await apiFetch<Job[]>('/index/?limit=30');
+    const data = await apiFetch<PaginatedJobs>(`/index/?limit=${PAGE_SIZE}&offset=${currentOffset}`);
+    const jobs = data.items;
     const tbody = document.getElementById('jobsBody')!;
-    if (!jobs.length) {
+    if (!data.total) {
       stopJobsPolling();
+      document.getElementById('jobsTotal')!.textContent = '';
+      (document.getElementById('jobsPrevBtn') as HTMLButtonElement).disabled = true;
+      (document.getElementById('jobsNextBtn') as HTMLButtonElement).disabled = true;
       if (!silent) {
         tbody.innerHTML =
           '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No jobs yet</td></tr>';
       }
       return;
     }
+    document.getElementById('jobsTotal')!.textContent =
+      `${data.total} total - showing ${currentOffset + 1}-${Math.min(currentOffset + PAGE_SIZE, data.total)}`;
+    (document.getElementById('jobsPrevBtn') as HTMLButtonElement).disabled = currentOffset === 0;
+    (document.getElementById('jobsNextBtn') as HTMLButtonElement).disabled = currentOffset + PAGE_SIZE >= data.total;
     tbody.innerHTML = jobs
       .map(
         (j) => {
@@ -96,6 +114,7 @@ async function triggerReindex(jobId: string): Promise<void> {
       method: 'POST',
     });
     toast('Reindex started: ' + r.id, 'success');
+    currentOffset = 0;
     setTimeout(loadJobs, 800);
   } catch (e) {
     toast('Reindex failed: ' + (e as Error).message, 'error');
@@ -109,6 +128,7 @@ async function deleteJob(jobId: string): Promise<void> {
       method: 'DELETE',
     });
     toast(`Deleted job + ${r.modules_deleted} modules`, 'success');
+    currentOffset = 0;
     setTimeout(loadJobs, 300);
   } catch (e) {
     toast('Delete failed: ' + (e as Error).message, 'error');
@@ -120,6 +140,7 @@ async function cancelJob(jobId: string): Promise<void> {
   try {
     await apiFetch<{ status: string }>(`/index/${jobId}/cancel`, { method: 'POST' });
     toast('Job cancelled', 'success');
+    currentOffset = 0;
     setTimeout(loadJobs, 300);
   } catch (e) {
     toast('Cancel failed: ' + (e as Error).message, 'error');
@@ -141,6 +162,7 @@ async function triggerIndex(): Promise<void> {
       body: JSON.stringify({ repo_url: url, branch, triggered_by: 'ui', discover_tags: discoverTags }),
     });
     toast('Indexing started: ' + r.id, 'success');
+    currentOffset = 0;
     setTimeout(loadJobs, 800);
   } catch (e) {
     toast('Failed: ' + (e as Error).message, 'error');

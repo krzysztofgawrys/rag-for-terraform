@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from app.core.vector_store import get_db, create_consumer_index_job
 from app.core.auth import AuthenticatedUser, require_admin, require_user
-from app.models.schemas import ConsumerIndexJobCreate, ConsumerIndexJobResponse
+from app.models.schemas import ConsumerIndexJobCreate, ConsumerIndexJobResponse, PaginatedConsumerJobs
 from app.workers.celery_app import index_consumer_repository_task, distill_conventions_task
 
 router = APIRouter(prefix="/consumer", tags=["consumer-indexing"])
@@ -61,20 +61,33 @@ async def get_consumer_job_status(job_id: UUID, user: AuthenticatedUser = requir
     return ConsumerIndexJobResponse(**job)
 
 
-@router.get("/", response_model=list[ConsumerIndexJobResponse])
+@router.get("/", response_model=PaginatedConsumerJobs)
 async def list_consumer_jobs(
     repo: str | None = None,
     limit: int = 20,
+    offset: int = 0,
     user: AuthenticatedUser = require_user,
     db: AsyncSession = Depends(get_db),
 ):
-    """List recent consumer indexing jobs."""
+    """List recent consumer indexing jobs (paginated)."""
     condition = "WHERE repo = :repo" if repo else ""
-    result = await db.execute(
-        text(f"SELECT * FROM consumer_index_jobs {condition} ORDER BY started_at DESC NULLS LAST LIMIT :limit"),
-        {"repo": repo, "limit": limit},
+    params: dict = {"repo": repo, "limit": limit, "offset": offset}
+    count_result = await db.execute(
+        text(f"SELECT COUNT(*) FROM consumer_index_jobs {condition}"), params,
     )
-    return [ConsumerIndexJobResponse(**dict(r)) for r in result.mappings().all()]
+    total = count_result.scalar()
+    result = await db.execute(
+        text(f"""SELECT * FROM consumer_index_jobs {condition}
+            ORDER BY CASE status
+                WHEN 'running' THEN 0 WHEN 'pending' THEN 1
+                WHEN 'failed' THEN 2 WHEN 'done' THEN 3
+                ELSE 4 END,
+            started_at DESC NULLS LAST
+            LIMIT :limit OFFSET :offset"""),
+        params,
+    )
+    items = [ConsumerIndexJobResponse(**dict(r)) for r in result.mappings().all()]
+    return PaginatedConsumerJobs(total=total, limit=limit, offset=offset, items=items)
 
 
 @router.post("/{job_id}/cancel")
@@ -146,6 +159,8 @@ async def reindex_consumer(job_id: UUID, user: AuthenticatedUser = require_admin
         raise HTTPException(status_code=404, detail="Job not found")
     if not job.get("repo_url"):
         raise HTTPException(status_code=400, detail="Job has no repo_url")
+    if job["status"] in ("pending", "running"):
+        raise HTTPException(status_code=400, detail=f"Job is already {job['status']}")
 
     # Reset existing job to pending state
     await db.execute(

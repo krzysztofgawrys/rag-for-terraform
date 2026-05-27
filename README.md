@@ -27,6 +27,8 @@ MCP tools from any AI agent or IDE.
   ALB-terminated SSO (AWS Identity Center / OIDC).
 - **Audit logging** -- non-blocking event logging to PostgreSQL (API, MCP, LLM,
   worker calls).
+- **Retrieval evaluation** -- YAML fixture with queries and expected module
+  references; CLI and API harness measure hit rate and recall on your own data.
 
 ## Architecture
 
@@ -103,6 +105,21 @@ Track progress in the **Index Jobs** tab or:
 ```bash
 curl http://localhost:8000/index/{job_id}
 ```
+
+### 5. Measure retrieval accuracy
+
+Once indexing is complete, run the evaluation harness against your modules to
+get a baseline retrieval score:
+
+```bash
+python scripts/eval_retrieval.py --url http://localhost:8000
+# or via the API directly:
+curl -X POST http://localhost:8000/query/eval
+```
+
+Edit `scripts/eval_queries.yaml` to add 20-30 queries with expected module
+references for your organisation. See [Retrieval evaluation](#retrieval-evaluation)
+for details.
 
 ## LLM configuration
 
@@ -212,7 +229,7 @@ npm run dev    # Vite dev server at :3000, proxies API requests to :8000
 | Group | Endpoints |
 |---|---|
 | Index | `POST /index/`, `GET /index/`, `GET /index/{id}`, `DELETE /index/{id}`, `POST /index/{id}/reindex` |
-| Query | `POST /query/`, `POST /query/stream` (SSE), `POST /query/dependencies`, `GET /query/stats` |
+| Query | `POST /query/`, `POST /query/stream` (SSE), `POST /query/dependencies`, `GET /query/stats`, `POST /query/eval` |
 | Modules | `GET /modules/`, `/modules/versions/all`, `/modules/repos/all`, `/modules/tags/all`, per-module versions/deps/dependents |
 | Consumer | `POST /consumer/`, `GET /consumer/`, `GET /consumer/{id}`, `DELETE /consumer/{id}`, `POST /consumer/{id}/reindex`, `POST /consumer/distill` |
 | Knowledge | `GET /snippets/module-refs`, `/snippets/consumer-repos`, `/snippets/module-refs/{ref}` |
@@ -245,6 +262,95 @@ migrations/               # Numbered SQL migration files
 scripts/                  # DB init schema, worker entrypoint, utility scripts
 .github/workflows/        # CI/CD automation
 ```
+
+## Known limitations and open questions
+
+### Convention authority vs correctness
+
+Distilled conventions are treated as **authoritative** in RAG prompts - they
+override generic Terraform best practices. This works well when the
+organisation's usage is healthy, but creates a failure mode: if 50 repos use a
+module in an outdated or insecure way, the distiller will faithfully capture
+that pattern, the self-evaluation will score it highly (it _is_ consistent with
+the data), and the agent will recommend it with confidence.
+
+The self-evaluation step ([eval.md](app/prompts/distiller/eval.md)) checks
+**faithfulness to the source usages** - whether the convention accurately
+reflects what the data says - not whether the pattern itself is correct,
+secure, or up to date. Score 5 means "every claim is evidenced", not "this is
+a good idea". Frequency is not correctness, and this layer does not distinguish
+between the two.
+
+Mitigations that exist today: confidence labels (STRONG/MODERATE/WEAK/
+LOW\_EVIDENCE based on evidence count), `stale` flag for conventions scoring
+below 3, and the `eval_reason` field for manual review. None of these catch a
+_consistently wrong_ pattern. A proper fix would require an external
+correctness signal - e.g. security policy rules, version-freshness checks, or
+human review of high-evidence conventions.
+
+### Manual convention distillation
+
+Module re-indexing triggers automatically via webhooks and GitHub Actions, but
+convention distillation does not. It requires a manual `POST /consumer/distill`
+call. This means the knowledge layer can drift from the actual module state
+until someone remembers to run it.
+
+This is a conscious trade-off: distillation is expensive (one LLM call per
+module-ref per dimension), and auto-triggering on every consumer re-index would
+cause unnecessary churn when modules haven't changed. The cost is that
+conventions may lag behind reality. If this matters for your deployment,
+consider adding distillation to your CI pipeline or scheduling it as a cron
+job.
+
+### Vector space scaling
+
+Every module version gets its own embedding row (`UNIQUE (repo, module_path,
+version)`). Code-hash caching avoids redundant LLM/embedding calls when the
+code hasn't changed, but it does not reduce the number of stored vectors -
+each version still occupies a row in the index.
+
+For repositories with many tagged versions, this means the vector count grows
+with `modules x versions`, not just `modules`. There is currently **no
+automatic pruning** of old versions from the vector index.
+
+The pgvector indexes are IVFFlat with `lists=100` (modules) and `lists=200`
+(knowledge\_snippets). This is adequate for up to roughly 10k vectors; beyond
+that, `lists` should be increased (general guideline: `sqrt(row_count)`) or
+the index type switched to HNSW for better recall at scale. Neither scaling
+strategy is automated.
+
+### Retrieval evaluation
+
+A retrieval evaluation harness is included (`scripts/eval_retrieval.py`). It
+runs a set of queries from a YAML fixture (`scripts/eval_queries.yaml`) against
+the live index and measures whether the expected modules appear in the top-K
+results.
+
+```bash
+# CLI (human report)
+python scripts/eval_retrieval.py --url http://localhost:8000
+
+# JSON output (CI-friendly)
+python scripts/eval_retrieval.py --json
+
+# API endpoint (retrieval only, no LLM calls)
+curl -X POST http://localhost:8000/query/eval
+```
+
+The fixture ships with example entries - replace them with your org's real
+modules and queries (20-30 cases recommended). Each entry specifies:
+- a natural-language query
+- the `module_ref`s that should appear in sources (`repo/module_path`)
+- match mode (`any` = at least one found, `all` = every ref found)
+
+The harness reports two numbers: **query hit rate** (how many queries found at
+least one expected module) and **module recall** (what fraction of all expected
+refs were returned). These serve double duty: catching retrieval regressions
+and providing "X% accuracy on your modules" for POC pitches.
+
+**What it does not cover**: answer quality, convention correctness, or
+end-to-end generation accuracy. Those require human evaluation or a separate
+LLM-as-judge layer - neither is implemented yet.
 
 ## License
 

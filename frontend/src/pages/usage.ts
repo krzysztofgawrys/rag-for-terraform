@@ -1,12 +1,22 @@
 import { apiFetch, esc, toast } from '../api';
-import type { ConsumerJob } from '../types';
+import type { ConsumerJob, PaginatedConsumerJobs } from '../types';
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const POLL_INTERVAL = 3000;
+let currentOffset = 0;
+const PAGE_SIZE = 20;
 
 export function initUsagePage(): void {
   document.getElementById('consumerIndexBtn')!.addEventListener('click', triggerConsumerIndex);
   document.getElementById('refreshConsumerJobsBtn')!.addEventListener('click', () => loadConsumerJobs());
+  document.getElementById('consumerJobsPrevBtn')!.addEventListener('click', () => {
+    currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
+    loadConsumerJobs();
+  });
+  document.getElementById('consumerJobsNextBtn')!.addEventListener('click', () => {
+    currentOffset += PAGE_SIZE;
+    loadConsumerJobs();
+  });
 }
 
 export function stopUsagePolling(): void {
@@ -26,16 +36,24 @@ function startPollingIfNeeded(jobs: ConsumerJob[]): void {
 
 export async function loadConsumerJobs(silent = false): Promise<void> {
   try {
-    const jobs = await apiFetch<ConsumerJob[]>('/consumer/?limit=30');
+    const data = await apiFetch<PaginatedConsumerJobs>(`/consumer/?limit=${PAGE_SIZE}&offset=${currentOffset}`);
+    const jobs = data.items;
     const tbody = document.getElementById('consumerJobsBody')!;
-    if (!jobs.length) {
+    if (!data.total) {
       stopUsagePolling();
+      document.getElementById('consumerJobsTotal')!.textContent = '';
+      (document.getElementById('consumerJobsPrevBtn') as HTMLButtonElement).disabled = true;
+      (document.getElementById('consumerJobsNextBtn') as HTMLButtonElement).disabled = true;
       if (!silent) {
         tbody.innerHTML =
           '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">No consumer jobs yet</td></tr>';
       }
       return;
     }
+    document.getElementById('consumerJobsTotal')!.textContent =
+      `${data.total} total - showing ${currentOffset + 1}-${Math.min(currentOffset + PAGE_SIZE, data.total)}`;
+    (document.getElementById('consumerJobsPrevBtn') as HTMLButtonElement).disabled = currentOffset === 0;
+    (document.getElementById('consumerJobsNextBtn') as HTMLButtonElement).disabled = currentOffset + PAGE_SIZE >= data.total;
     tbody.innerHTML = jobs
       .map(
         (j) => {
@@ -114,6 +132,7 @@ async function triggerConsumerIndex(): Promise<void> {
       }),
     });
     toast('Consumer indexing started: ' + r.id, 'success');
+    currentOffset = 0;
     setTimeout(loadConsumerJobs, 800);
   } catch (e) {
     toast('Failed: ' + (e as Error).message, 'error');
@@ -125,6 +144,7 @@ async function cancelConsumerJob(jobId: string): Promise<void> {
   try {
     await apiFetch<{ status: string }>(`/consumer/${jobId}/cancel`, { method: 'POST' });
     toast('Job cancelled', 'success');
+    currentOffset = 0;
     setTimeout(() => loadConsumerJobs(), 300);
   } catch (e) {
     toast('Cancel failed: ' + (e as Error).message, 'error');
@@ -139,6 +159,7 @@ async function deleteConsumerJob(jobId: string): Promise<void> {
       { method: 'DELETE' },
     );
     toast(`Deleted job + ${r.usages_deleted} usages + ${r.conventions_deleted} conventions`, 'success');
+    currentOffset = 0;
     setTimeout(() => loadConsumerJobs(), 300);
   } catch (e) {
     toast('Delete failed: ' + (e as Error).message, 'error');
@@ -151,6 +172,7 @@ async function triggerConsumerReindex(jobId: string): Promise<void> {
       method: 'POST',
     });
     toast('Consumer reindex started: ' + r.id, 'success');
+    currentOffset = 0;
     setTimeout(loadConsumerJobs, 800);
   } catch (e) {
     toast('Reindex failed: ' + (e as Error).message, 'error');

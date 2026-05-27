@@ -146,6 +146,13 @@ class ConsumerIndexJobCreate(BaseModel):
     run_distillation: bool = True
 
 
+class PaginatedIndexJobs(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[IndexJobResponse]
+
+
 class ConsumerIndexJobResponse(BaseModel):
     id: UUID
     repo: str
@@ -161,3 +168,10 @@ class ConsumerIndexJobResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PaginatedConsumerJobs(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[ConsumerIndexJobResponse]

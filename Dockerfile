@@ -24,12 +24,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install CPU-only PyTorch first (only for local embeddings — huge dep, separate layer)
-COPY requirements.txt .
+# Install deps - local provider needs PyTorch + sentence-transformers (~4 GB)
+COPY requirements-base.txt requirements.txt ./
 RUN if [ "$EMBEDDING_PROVIDER" = "local" ]; then \
-        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
-    fi \
- && pip install --no-cache-dir -r requirements.txt
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+     && pip install --no-cache-dir -r requirements.txt; \
+    else \
+        pip install --no-cache-dir -r requirements-base.txt; \
+    fi
 
 # =============================================================================
 # Stage 2 — model cache: pre-download embeddings model (local provider only)

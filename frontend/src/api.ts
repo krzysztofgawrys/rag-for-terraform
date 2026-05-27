@@ -36,7 +36,7 @@ export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> 
   const r = await fetch(API + path, fetchOpts);
 
   // Try token refresh on 401
-  if (r.status === 401 && _accessToken) {
+  if (r.status === 401 && _authEnabled) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
       // Retry with new token

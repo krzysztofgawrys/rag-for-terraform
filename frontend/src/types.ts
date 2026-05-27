@@ -43,6 +43,13 @@ export interface Job {
   error?: string;
 }
 
+export interface PaginatedJobs {
+  total: number;
+  limit: number;
+  offset: number;
+  items: Job[];
+}
+
 export interface Stats {
   total_modules?: number;
   total_repos?: number;
@@ -139,4 +146,11 @@ export interface ConsumerJob {
   started_at?: string;
   finished_at?: string;
   error?: string;
+}
+
+export interface PaginatedConsumerJobs {
+  total: number;
+  limit: number;
+  offset: number;
+  items: ConsumerJob[];
 }

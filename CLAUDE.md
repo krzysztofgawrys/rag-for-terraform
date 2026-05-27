@@ -70,7 +70,7 @@ app/
     routes/
       webhook.py       # POST /webhook/github, /webhook/gitlab (HMAC verify)
       index.py         # POST /index/, DELETE /index/{job_id}, POST /index/{job_id}/reindex, GET /index/{job_id}, GET /index/
-      query.py         # POST /query/, POST /query/stream (SSE), POST /query/dependencies, GET /query/stats
+      query.py         # POST /query/, POST /query/stream (SSE), POST /query/dependencies, GET /query/stats, POST /query/eval
       modules.py       # GET /modules/, /modules/versions/all, /modules/tags/all, /modules/{repo}/{path}/versions, /modules/{repo}/{path}/dependencies, /modules/{repo}/{path}/dependents
       consumer.py      # POST /consumer/ (index consumer repo), GET /consumer/ (list jobs), POST /distill, etc.
       snippets.py      # GET /snippets/module-refs, /snippets/consumer-repos, /snippets/module-refs/{ref}
@@ -104,6 +104,8 @@ migrations/
   001_*.sql            # Numbered SQL migration files (applied on app startup)
 scripts/
   init_db.sql          # Initial pgvector schema (runs once via Docker entrypoint)
+  eval_retrieval.py    # Retrieval evaluation harness (CLI + JSON output)
+  eval_queries.yaml    # YAML fixture: queries + expected module_refs
 .github/
   workflows/
     rag-index.yml      # GitHub Actions: auto-index on push of .tf files to main
@@ -432,6 +434,7 @@ All tools are decorated with `@audit_mcp_tool` for automatic audit logging.
 | POST | `/query/stream` | SSE streaming RAG query |
 | POST | `/query/dependencies` | Dependency tree |
 | GET | `/query/stats` | Knowledge base stats |
+| POST | `/query/eval` | Retrieval evaluation (fixture-based, no LLM calls) |
 
 ### Modules
 | Method | Path | Description |

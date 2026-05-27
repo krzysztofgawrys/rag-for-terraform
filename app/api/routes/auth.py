@@ -4,7 +4,7 @@ Auth routes — login, token refresh, user info, API key management.
 from __future__ import annotations
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,9 +97,9 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 
     response.set_cookie(
         key="refresh_token", value=refresh,
-        httponly=True, samesite="lax", secure=False,  # secure=True in prod behind HTTPS
+        httponly=True, samesite="lax", secure=True,  # secure=True in prod behind HTTPS
         max_age=settings.jwt_refresh_ttl_days * 86400,
-        path="/auth/refresh",
+        path="/auth",
     )
 
     return TokenResponse(
@@ -125,6 +125,7 @@ async def refresh_token(
 
 @router.post("/refresh-token", response_model=TokenResponse)
 async def refresh_token_from_body(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
     refresh_token: str | None = None,
@@ -136,6 +137,9 @@ async def refresh_token_from_body(
     settings = get_settings()
     if settings.auth_mode != "local":
         raise HTTPException(400, "Only available in local auth mode")
+
+    if not refresh_token:
+        refresh_token = request.cookies.get("refresh_token")
 
     if not refresh_token:
         raise HTTPException(401, "Missing refresh token")
@@ -162,9 +166,9 @@ async def refresh_token_from_body(
 
     response.set_cookie(
         key="refresh_token", value=new_refresh,
-        httponly=True, samesite="lax", secure=False,
+        httponly=True, samesite="lax", secure=True,
         max_age=settings.jwt_refresh_ttl_days * 86400,
-        path="/auth/refresh",
+        path="/auth",
     )
 
     return TokenResponse(
@@ -192,7 +196,7 @@ async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
 @router.post("/logout")
 async def logout(response: Response):
     """Clear refresh token cookie."""
-    response.delete_cookie("refresh_token", path="/auth/refresh")
+    response.delete_cookie("refresh_token", path="/auth")
     return {"status": "ok"}
 
 

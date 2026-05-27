@@ -36,6 +36,8 @@ def index_repository_task(self, repo_url: str, branch: str,
     start = _time.perf_counter()
     error_text = None
     result = None
+    # Mark running immediately so UI reflects the real state
+    asyncio.run(_mark_index_job_running(job_id))
     try:
         if force_clone:
             clear_repo_cache(repo_url)
@@ -80,6 +82,7 @@ def index_consumer_repository_task(
     start = _time.perf_counter()
     error_text = None
     result = None
+    asyncio.run(_mark_consumer_job_running(job_id))
     try:
         # Phase 1: consumer indexing (parse → embed → store)
         # Retry the whole task only if THIS phase fails.
@@ -196,6 +199,32 @@ async def _fail_consumer_job(job_id: str, error: str):
                 finished_at=datetime.now(timezone.utc),
                 error=error[:2000],
             )
+    finally:
+        await engine.dispose()
+
+
+async def _mark_consumer_job_running(job_id: str):
+    """Mark consumer job as running immediately when Celery picks it up."""
+    from datetime import datetime, timezone
+    from app.core.vector_store import make_session_factory, update_consumer_index_job
+    engine, SessionLocal = make_session_factory()
+    try:
+        async with SessionLocal() as db:
+            await update_consumer_index_job(db, job_id, status="running",
+                                            started_at=datetime.now(timezone.utc))
+    finally:
+        await engine.dispose()
+
+
+async def _mark_index_job_running(job_id: str):
+    """Mark index job as running immediately when Celery picks it up."""
+    from datetime import datetime, timezone
+    from app.core.vector_store import make_session_factory, update_index_job
+    engine, SessionLocal = make_session_factory()
+    try:
+        async with SessionLocal() as db:
+            await update_index_job(db, job_id, status="running",
+                                   started_at=datetime.now(timezone.utc))
     finally:
         await engine.dispose()
 

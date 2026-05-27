@@ -1,0 +1,51 @@
+# Retrieval evaluation fixture.
+#
+# Each entry is a query + the module_refs that MUST appear in the top-K
+# sources for the query to count as a hit.  module_ref format: repo/module_path
+# (same as knowledge_snippets.module_ref).
+#
+# Fields:
+#   query          - natural-language request (same as POST /query/ body)
+#   query_type     - compose | optimize | audit | search (default: compose)
+#   expected_refs  - list of repo/module_path that should appear in sources
+#   top_k          - how many sources to request (default: 5)
+#   match          - "any" (at least one ref found) or "all" (every ref found)
+#                    default: any
+#   description    - human note for reports (optional)
+#
+# How to populate:
+#   1. Pick 20-30 real queries your team would ask during a POC.
+#   2. For each, list the modules a knowledgeable engineer would reach for.
+#   3. Run the harness, review misses, adjust top_k or expected_refs.
+#
+# Example entries (replace with your org's real modules):
+
+- query: "I need a VPC with public and private subnets"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/networking/vpc"
+  description: "basic VPC - bread and butter query"
+
+- query: "deploy an ECS Fargate service behind an ALB"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/ecs/cluster"
+    - "terraform-modules/ecs/service"
+  match: all
+  description: "multi-module stack - tests whether both ECS pieces surface"
+
+- query: "set up an S3 bucket with versioning and lifecycle rules"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/storage/s3"
+
+- query: "review this code for security issues with IAM permissions"
+  query_type: audit
+  expected_refs:
+    - "terraform-modules/iam/role"
+
+- query: "what modules do we have for RDS?"
+  query_type: search
+  expected_refs:
+    - "terraform-modules/database/rds"
+  description: "discovery query - user browsing the catalog"
