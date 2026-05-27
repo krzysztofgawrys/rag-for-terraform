@@ -1,42 +1,85 @@
 """
-Terraform RAG — MCP tools mounted as ASGI sub-app inside FastAPI.
+Terraform RAG - MCP tools mounted as ASGI sub-app inside FastAPI.
 
-Accessible at:  GET/POST http://localhost:8000/mcp/sse
+Accessible at:  POST http://localhost:8000/mcp/
 Claude Code config (.mcp.json):
-    { "type": "sse", "url": "http://localhost:8000/mcp/sse" }
+    { "type": "http", "url": "http://localhost:8000/mcp/" }
 """
 
 from typing import Optional
 
+import structlog
 from mcp.server.fastmcp import FastMCP
 
 from app.core.audit import audit_mcp_tool
+from app.core.config import get_settings
 from app.core.vector_store import AsyncSessionLocal
 from app.core import graph as graph_db
 
-mcp = FastMCP(
-    name="terraform-rag",
-    stateless_http=True,
-    instructions=(
-        "Terraform module knowledge base for this organisation. "
-        "\n\n"
-        "**For building/extending infrastructure** (preferred workflow):\n"
-        "1. `pick_modules(query)` — cheap Haiku call returns a tight list of "
-        "canonical `repo//module_path` references for the request.\n"
-        "2. `get_module_details(repo, module_path)` for each pick — full "
-        "variables, outputs, conventions.\n"
-        "3. Generate the HCL yourself from those details.\n"
-        "\n"
-        "Or use `query_modules(query, query_type='compose')` for a richer "
-        "one-shot context that includes the catalog, stack patterns, "
-        "compose patterns, and conventions — but no shopping list.\n"
-        "\n"
-        "**Browse the index:** `list_modules`, `get_module_details`.\n"
-        "**Dependency graph:** `get_dependencies`.\n"
-        "**Conventions / usage:** `get_module_usage`, `find_similar_usages`.\n"
-        "**Raw HCL from git:** `fetch_example_code`."
-    ),
+log = structlog.get_logger("mcp_tools")
+
+_MCP_INSTRUCTIONS = (
+    "Terraform module knowledge base for this organisation. "
+    "\n\n"
+    "**For building/extending infrastructure** (preferred workflow):\n"
+    "1. `pick_modules(query)` - cheap Haiku call returns a tight list of "
+    "canonical `repo//module_path` references for the request.\n"
+    "2. `get_module_details(repo, module_path)` for each pick - full "
+    "variables, outputs, conventions.\n"
+    "3. Generate the HCL yourself from those details.\n"
+    "\n"
+    "Or use `query_modules(query, query_type='compose')` for a richer "
+    "one-shot context that includes the catalog, stack patterns, "
+    "compose patterns, and conventions - but no shopping list.\n"
+    "\n"
+    "**Browse the index:** `list_modules`, `get_module_details`.\n"
+    "**Dependency graph:** `get_dependencies`.\n"
+    "**Conventions / usage:** `get_module_usage`, `find_similar_usages`.\n"
+    "**Raw HCL from git:** `fetch_example_code`."
 )
+
+
+def _create_mcp() -> FastMCP:
+    """Create FastMCP instance, optionally with Cognito OAuth."""
+    settings = get_settings()
+
+    if (settings.auth_mode == "sso"
+            and settings.cognito_user_pool_id
+            and settings.mcp_oauth_issuer_url):
+        from mcp.server.auth.settings import (
+            AuthSettings, ClientRegistrationOptions, RevocationOptions,
+        )
+        from app.core.cognito_oauth import CognitoOAuthProvider
+
+        provider = CognitoOAuthProvider(settings)
+        server = FastMCP(
+            name="terraform-rag",
+            stateless_http=True,
+            instructions=_MCP_INSTRUCTIONS,
+            auth_server_provider=provider,
+            auth=AuthSettings(
+                issuer_url=settings.mcp_oauth_issuer_url,
+                resource_server_url=f"{settings.mcp_oauth_issuer_url}/mcp",
+                client_registration_options=ClientRegistrationOptions(
+                    enabled=True,
+                    valid_scopes=["openid", "email", "profile"],
+                    default_scopes=["openid", "email", "profile"],
+                ),
+                revocation_options=RevocationOptions(enabled=True),
+            ),
+        )
+        provider.register_callback_route(server)
+        log.info("mcp_oauth_enabled", issuer=settings.mcp_oauth_issuer_url)
+        return server
+
+    return FastMCP(
+        name="terraform-rag",
+        stateless_http=True,
+        instructions=_MCP_INSTRUCTIONS,
+    )
+
+
+mcp = _create_mcp()
 
 
 # ---------------------------------------------------------------------------

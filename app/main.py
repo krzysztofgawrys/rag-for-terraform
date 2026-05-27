@@ -131,4 +131,17 @@ async def health():
     return {"status": "ok", "version": "1.0.0"}
 
 
-app.mount("", AuthMiddleware(mcp_http_app, min_role="user"))
+# MCP mount: when Cognito OAuth is active, FastMCP handles auth natively
+# via BearerAuthBackend + RequireAuthMiddleware. Otherwise fall back to
+# our custom AuthMiddleware for API key + ALB SSO validation.
+_mcp_oauth_active = (
+    settings.auth_mode == "sso"
+    and settings.cognito_user_pool_id
+    and settings.mcp_oauth_issuer_url
+)
+if _mcp_oauth_active:
+    app.mount("", mcp_http_app)
+elif settings.auth_mode != "disabled":
+    app.mount("", AuthMiddleware(mcp_http_app, min_role="user"))
+else:
+    app.mount("", mcp_http_app)

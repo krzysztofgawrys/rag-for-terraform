@@ -79,9 +79,15 @@ class Settings(BaseSettings):
     sso_user_groups: str = "terraform-rag-users"
     sso_default_role: str = "user"                   # role when no groups match ("user", "readonly", "admin")
     sso_region: str = "eu-west-1"
-    # Local mode — seed admin on first startup
+    # Local mode - seed admin on first startup
     admin_initial_email: str = ""
     admin_initial_password: str = ""
+    # MCP OAuth (Cognito-backed, used when auth_mode=sso)
+    cognito_user_pool_id: str = ""          # e.g. "eu-west-1_AbCdEfGhI"
+    cognito_domain: str = ""                # e.g. "terraform-rag-prod.auth.eu-west-1.amazoncognito.com"
+    cognito_mcp_client_id: str = ""         # Cognito app client ID for MCP OAuth proxy
+    cognito_mcp_client_secret: str = ""     # Cognito app client secret (server-side code exchange)
+    mcp_oauth_issuer_url: str = ""          # e.g. "https://terraform-rag-prod-int.domain.com"
 
     # Agent-based compose (replaces shopping-list pipeline with Claude tool-use loop)
     agent_compose_enabled: bool = False   # feature toggle
