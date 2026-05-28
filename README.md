@@ -26,6 +26,36 @@
 
 ---
 
+## Try the live demo
+
+**Web UI** - browse 704 modules across 57 repos:
+
+> https://terraform-rag.io
+>
+> Login: `demo@terraform-rag.io` / `demo` (read-only)
+
+**MCP** - connect your IDE to the knowledge base:
+
+```json
+{
+  "mcpServers": {
+    "terraform-rag": {
+      "type": "http",
+      "url": "https://terraform-rag.io/mcp",
+      "headers": {
+        "Authorization": "Bearer trag_6c495d7a027369cb5d324d877626c272"
+      }
+    }
+  }
+}
+```
+
+8 tools available: `list_modules`, `get_module_details`, `get_dependencies`,
+`get_module_usage`, `find_similar_usages`, `fetch_example_code`, `get_stats`,
+`list_modules` (with `semantic_query` for natural language search).
+
+---
+
 ## What it does
 
 Point it at your Terraform module repositories. It clones them, parses every
