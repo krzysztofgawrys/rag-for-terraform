@@ -1,5 +1,17 @@
-import { apiFetch, setAccessToken, toast } from '../api';
+import { apiFetch, setAccessToken, setUserRole, toast } from '../api';
 import type { TokenResponse } from '../types';
+
+/** Decode JWT payload without verification (role is enforced server-side). */
+function parseJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
 
 export function initLoginPage(onLoginSuccess: () => void): void {
   const form = document.getElementById('loginForm') as HTMLFormElement | null;
@@ -20,6 +32,14 @@ export function initLoginPage(onLoginSuccess: () => void): void {
         body: JSON.stringify({ email, password }),
       });
       setAccessToken(resp.access_token);
+
+      // Extract role from JWT immediately so applyRoleVisibility works
+      // even if the subsequent /auth/me call is slow or rate-limited.
+      const claims = parseJwtPayload(resp.access_token);
+      if (claims && typeof claims.role === 'string') {
+        setUserRole(claims.role);
+      }
+
       toast('Logged in', 'success');
       onLoginSuccess();
     } catch (err) {
