@@ -1,5 +1,5 @@
 import './style.css';
-import { apiFetch, toast, setAccessToken, setAuthEnabled } from './api';
+import { apiFetch, toast, setAccessToken, setAuthEnabled, setUserRole, getUserRole } from './api';
 import { initRouter, navigateTo } from './router';
 import type { Stats, AuthInfo, UserInfo } from './types';
 import { initModulesPage } from './pages/modules';
@@ -46,6 +46,8 @@ function initTheme(): void {
 async function loadUserInfo(): Promise<void> {
   if (authMode === 'disabled') {
     document.getElementById('userInfo')!.style.display = 'none';
+    setUserRole(null);
+    applyRoleVisibility();
     return;
   }
   try {
@@ -54,9 +56,25 @@ async function loadUserInfo(): Promise<void> {
     el.style.display = 'flex';
     document.getElementById('userEmail')!.textContent = user.email;
     document.getElementById('userRole')!.textContent = user.role;
+    setUserRole(user.role);
   } catch {
     document.getElementById('userInfo')!.style.display = 'none';
+    setUserRole(null);
   }
+  applyRoleVisibility();
+}
+
+function applyRoleVisibility(): void {
+  const role = getUserRole();
+  const isReadonly = role === 'readonly';
+  // Hide tabs that readonly users cannot access
+  const hiddenForReadonly = ['query', 'jobs', 'usage', 'auditlogs'];
+  document.querySelectorAll<HTMLButtonElement>('nav button[data-page]').forEach((btn) => {
+    const page = btn.dataset.page || '';
+    if (hiddenForReadonly.includes(page)) {
+      btn.style.display = isReadonly ? 'none' : '';
+    }
+  });
 }
 
 function setupLogout(): void {

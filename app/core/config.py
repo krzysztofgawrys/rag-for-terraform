@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     cognito_mcp_client_secret: str = ""     # Cognito app client secret (server-side code exchange)
     mcp_oauth_issuer_url: str = ""          # e.g. "https://terraform-rag-prod-int.domain.com"
 
+    # Demo mode - disables expensive LLM tools (query_modules, pick_modules in MCP)
+    demo_mode: bool = False
+
     # Agent-based compose (replaces shopping-list pipeline with Claude tool-use loop)
     agent_compose_enabled: bool = False   # feature toggle
     agent_max_turns: int = 15             # max agent iterations before forced stop

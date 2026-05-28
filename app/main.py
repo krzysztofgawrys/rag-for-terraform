@@ -142,6 +142,6 @@ _mcp_oauth_active = (
 if _mcp_oauth_active:
     app.mount("", mcp_http_app)
 elif settings.auth_mode != "disabled":
-    app.mount("", AuthMiddleware(mcp_http_app, min_role="user"))
+    app.mount("", AuthMiddleware(mcp_http_app, min_role="readonly"))
 else:
     app.mount("", mcp_http_app)

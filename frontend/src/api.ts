@@ -7,6 +7,7 @@ const API =
 
 let _accessToken: string | null = null;
 let _authEnabled = false;
+let _userRole: string | null = null;
 
 export function setAuthEnabled(enabled: boolean): void {
   _authEnabled = enabled;
@@ -18,6 +19,14 @@ export function setAccessToken(token: string | null): void {
 
 export function getAccessToken(): string | null {
   return _accessToken;
+}
+
+export function setUserRole(role: string | null): void {
+  _userRole = role;
+}
+
+export function getUserRole(): string | null {
+  return _userRole;
 }
 
 export function isAuthenticated(): boolean {

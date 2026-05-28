@@ -292,6 +292,7 @@ def require_role(*roles: str):
 
 require_admin = require_role("admin")
 require_user = require_role("admin", "user")
+require_reader = require_role("admin", "user", "readonly")
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +308,12 @@ class AuthMiddleware:
 
     def __init__(self, app: Any, min_role: str = "user") -> None:
         self.app = app
-        self.allowed_roles = {"admin"} if min_role == "admin" else {"admin", "user"}
+        if min_role == "admin":
+            self.allowed_roles = {"admin"}
+        elif min_role == "readonly":
+            self.allowed_roles = {"admin", "user", "readonly"}
+        else:
+            self.allowed_roles = {"admin", "user"}
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope["type"] not in ("http", "websocket"):

@@ -142,6 +142,19 @@ async def query_modules(
                      For generate/compose, multi-query and dep expansion
                      may increase the total context to ~top_k * 3.
     """
+    settings = get_settings()
+    if settings.demo_mode:
+        return (
+            "**query_modules is disabled in the public demo** to control LLM costs.\n\n"
+            "Use the free tools instead:\n"
+            "- `list_modules` - browse or semantic-search the module catalog\n"
+            "- `get_module_details` - full variables, outputs, versions\n"
+            "- `get_module_usage` - conventions and usage examples\n"
+            "- `get_dependencies` - dependency tree\n\n"
+            "Run your own instance for full access: "
+            "https://github.com/krzysztofgawrys/rag-for-terraform"
+        )
+
     from app.core.embeddings import embed_query as _embed
     from app.core.vector_store import get_snippets_for_module
     from app.services.retriever import (
@@ -289,6 +302,18 @@ async def pick_modules(query: str, top_k: int = 8) -> str:
         `repo//module_path?ref=<tag>` source paths) plus a short note
         on next steps.
     """
+    settings = get_settings()
+    if settings.demo_mode:
+        return (
+            "**pick_modules is disabled in the public demo** to control LLM costs.\n\n"
+            "Use the free tools instead:\n"
+            "- `list_modules(semantic_query='...')` - semantic search across modules\n"
+            "- `get_module_details` - full variables, outputs, versions\n"
+            "- `get_module_usage` - conventions and usage examples\n\n"
+            "Run your own instance for full access: "
+            "https://github.com/krzysztofgawrys/rag-for-terraform"
+        )
+
     from app.core.embeddings import embed_query as _embed
     from app.services.retriever import (
         _multi_query_search, _build_module_catalog, _search_compose_patterns,

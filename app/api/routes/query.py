@@ -15,7 +15,7 @@ import yaml
 
 from app.core.vector_store import get_db
 from app.core.embeddings import embed_query
-from app.core.auth import AuthenticatedUser, require_user
+from app.core.auth import AuthenticatedUser, require_user, require_reader
 from app.services.retriever import query as run_query, stream_query as run_stream_query
 from app.core import graph as graph_db
 from app.core import vector_store as vs
@@ -65,7 +65,7 @@ class DependencyRequest(BaseModel):
 
 
 @router.post("/dependencies")
-async def get_dependencies(req: DependencyRequest, user: AuthenticatedUser = require_user):
+async def get_dependencies(req: DependencyRequest, user: AuthenticatedUser = require_reader):
     """Full dependency tree for a module."""
     # Treat "latest" as no version filter - there is no literal "latest"
     # version in the dependency table; it stores actual git tags.
@@ -85,7 +85,7 @@ async def get_dependencies(req: DependencyRequest, user: AuthenticatedUser = req
 
 
 @router.get("/stats")
-async def knowledge_base_stats(user: AuthenticatedUser = require_user, db: AsyncSession = Depends(get_db)):
+async def knowledge_base_stats(user: AuthenticatedUser = require_reader, db: AsyncSession = Depends(get_db)):
     """Overview stats of the indexed knowledge base."""
     result = await db.execute(text("""
         SELECT

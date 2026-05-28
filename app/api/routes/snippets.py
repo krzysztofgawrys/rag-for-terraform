@@ -7,14 +7,14 @@ from app.core.vector_store import (
     list_consumer_repos,
     get_snippets_for_module,
 )
-from app.core.auth import require_user
+from app.core.auth import require_reader
 from app.models.schemas import (
     ModuleRefSnippetSummary,
     SnippetModuleDetail,
     SnippetResponse,
 )
 
-router = APIRouter(prefix="/snippets", tags=["snippets"], dependencies=[require_user])
+router = APIRouter(prefix="/snippets", tags=["snippets"], dependencies=[require_reader])
 
 
 @router.get("/module-refs", response_model=list[ModuleRefSnippetSummary])

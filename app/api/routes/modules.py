@@ -4,10 +4,10 @@ from sqlalchemy import text
 
 from app.core.vector_store import get_db, get_module_versions
 from app.core import graph as graph_db
-from app.core.auth import require_user
+from app.core.auth import require_reader
 from app.models.schemas import ModuleResponse
 
-router = APIRouter(prefix="/modules", tags=["modules"], dependencies=[require_user])
+router = APIRouter(prefix="/modules", tags=["modules"], dependencies=[require_reader])
 
 
 @router.get("/", response_model=list[ModuleResponse])
