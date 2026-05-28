@@ -74,6 +74,7 @@ async function enterApp() {
 async function init() {
     initTheme();
     // Determine auth mode from API
+    let apiReachable = true;
     try {
         const info = await apiFetch('/auth/info');
         authMode = info.auth_mode;
@@ -81,6 +82,7 @@ async function init() {
     catch {
         // If /auth/info fails, assume disabled (old API without auth)
         authMode = 'disabled';
+        apiReachable = false;
     }
     setAuthEnabled(authMode !== 'disabled');
     // Check API health
@@ -118,7 +120,11 @@ async function init() {
         if (pageId === 'auditlogs')
             loadAuditLogs();
     });
-    if (authMode === 'disabled') {
+    if (authMode === 'disabled' && !apiReachable) {
+        // API unreachable — show landing page
+        navigateTo('login');
+    }
+    else if (authMode === 'disabled') {
         // No auth — go straight to app
         await loadStats();
         await initModulesPage();

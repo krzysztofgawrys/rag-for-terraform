@@ -324,27 +324,140 @@
   </div>
 </div>
 
-<!-- LOGIN PAGE -->
+<!-- LANDING / LOGIN PAGE -->
 <div class="page" id="page-login">
-  <div style="max-width:360px;margin:80px auto">
-    <div style="text-align:center;margin-bottom:32px">
-      <span style="font-size:48px">&#x2B21;</span>
-      <h2 style="margin:8px 0 4px;font-weight:500">Terraform RAG</h2>
-      <p style="color:var(--text3);font-size:12px">Sign in to continue</p>
+  <div class="landing">
+
+    <!-- Main content -->
+    <div class="landing-content">
+
+      <!-- Hero -->
+      <section class="landing-hero">
+        <span class="landing-logo">&#x2B21;</span>
+        <h1>Terraform<span style="color:var(--green)">&nbsp;RAG</span></h1>
+        <p class="landing-tagline">
+          AI-powered knowledge base for your Terraform modules.<br>
+          Index, search, compose, and audit - all from one place.
+        </p>
+      </section>
+
+      <!-- Features -->
+      <section class="landing-features">
+        <div class="landing-feature">
+          <span class="landing-feature-icon">&#x29C9;</span>
+          <h3>Compose</h3>
+          <p>Describe what you need in plain English. The agentic pipeline explores your module catalog, fetches conventions, and generates production-ready HCL.</p>
+        </div>
+        <div class="landing-feature">
+          <span class="landing-feature-icon">&#x2315;</span>
+          <h3>Search</h3>
+          <p>Semantic search across 700+ modules. Find the right module by intent, not just name. Browse variables, outputs, dependencies, and usage patterns.</p>
+        </div>
+        <div class="landing-feature">
+          <span class="landing-feature-icon">&#x2691;</span>
+          <h3>Audit</h3>
+          <p>Security and compliance review powered by your organisation's actual conventions. Check IAM, encryption, networking, and tagging in seconds.</p>
+        </div>
+        <div class="landing-feature">
+          <span class="landing-feature-icon">&#x27F3;</span>
+          <h3>Optimize</h3>
+          <p>Review existing code against real deployment patterns. Catch version drift, convention violations, and missing best practices.</p>
+        </div>
+        <div class="landing-feature">
+          <span class="landing-feature-icon">&#x2B21;</span>
+          <h3>MCP Server</h3>
+          <p>Native integration with Claude Code, Cursor, and Windsurf. Query your module knowledge base directly from your IDE.</p>
+        </div>
+        <div class="landing-feature">
+          <span class="landing-feature-icon">&#x2637;</span>
+          <h3>Knowledge Layer</h3>
+          <p>Learns how modules are used across consumer repos. Distils naming, variable, tagging, and deployment conventions automatically.</p>
+        </div>
+      </section>
+
+      <!-- Screenshots -->
+      <section class="landing-screenshots">
+        <h2>See it in action</h2>
+        <div class="landing-screenshot-grid">
+          <div class="landing-screenshot" data-idx="0">
+            <img src="/screenshots/01-modules.png" alt="Module browser" loading="lazy">
+            <span>Module browser with 704 indexed modules</span>
+          </div>
+          <div class="landing-screenshot" data-idx="1">
+            <img src="/screenshots/02-query-compose.png" alt="Agentic query" loading="lazy">
+            <span>Agentic compose with tool calls</span>
+          </div>
+          <div class="landing-screenshot" data-idx="2">
+            <img src="/screenshots/03-query-result.png" alt="Generated HCL" loading="lazy">
+            <span>Generated HCL with syntax highlighting</span>
+          </div>
+          <div class="landing-screenshot" data-idx="3">
+            <img src="/screenshots/04-knowledge.png" alt="Knowledge browser" loading="lazy">
+            <span>Convention and usage knowledge browser</span>
+          </div>
+          <div class="landing-screenshot" data-idx="4">
+            <img src="/screenshots/05-index-jobs.png" alt="Index jobs" loading="lazy">
+            <span>Repository indexing dashboard</span>
+          </div>
+          <div class="landing-screenshot" data-idx="5">
+            <img src="/screenshots/06-audit-logs.png" alt="Audit logs" loading="lazy">
+            <span>Audit trail with LLM and MCP calls</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lightbox -->
+      <div class="lightbox" id="lightbox">
+        <button class="lightbox-close" id="lightboxClose">&times;</button>
+        <button class="lightbox-prev" id="lightboxPrev">&#x2039;</button>
+        <button class="lightbox-next" id="lightboxNext">&#x203A;</button>
+        <img class="lightbox-img" id="lightboxImg" src="" alt="">
+        <div class="lightbox-caption" id="lightboxCaption"></div>
+        <div class="lightbox-counter" id="lightboxCounter"></div>
+      </div>
+
+      <!-- Stack -->
+      <section class="landing-stack">
+        <h2>Built with</h2>
+        <div class="landing-stack-items">
+          <span>FastAPI</span><span>PostgreSQL + pgvector</span><span>Claude Sonnet</span>
+          <span>sentence-transformers</span><span>Celery + Redis</span><span>MCP</span>
+        </div>
+      </section>
+
+      <section class="landing-footer">
+        <p>
+          <a href="https://github.com/krzysztofgawrys/rag-for-terraform" target="_blank" rel="noopener">GitHub</a>
+          &nbsp;&middot;&nbsp;
+          BSL 1.1 License
+          &nbsp;&middot;&nbsp;
+          <a href="https://github.com/sponsors/krzysztofgawrys" target="_blank" rel="noopener">Sponsor</a>
+        </p>
+      </section>
     </div>
-    <form id="loginForm" style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <div class="form-label">Email</div>
-        <input type="email" id="loginEmail" required placeholder="admin@example.com"
-               style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text1);font:inherit;padding:8px 10px">
+
+    <!-- Sign in sidebar -->
+    <aside class="landing-signin">
+      <div class="landing-signin-inner">
+        <span style="font-size:32px;display:block;text-align:center">&#x2B21;</span>
+        <h3 style="text-align:center;margin:8px 0 4px;font-weight:500">Sign in</h3>
+        <p style="color:var(--text3);font-size:11px;text-align:center;margin-bottom:16px">to access the dashboard</p>
+        <form id="loginForm" style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div class="form-label">Email</div>
+            <input type="email" id="loginEmail" required placeholder="admin@example.com"
+                   style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font:inherit;padding:8px 10px;font-size:12px">
+          </div>
+          <div>
+            <div class="form-label">Password</div>
+            <input type="password" id="loginPassword" required placeholder="password"
+                   style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font:inherit;padding:8px 10px;font-size:12px">
+          </div>
+          <button type="submit" id="loginBtn" class="run-btn" style="margin-top:4px;font-size:12px;padding:8px">Login</button>
+        </form>
       </div>
-      <div>
-        <div class="form-label">Password</div>
-        <input type="password" id="loginPassword" required placeholder="password"
-               style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text1);font:inherit;padding:8px 10px">
-      </div>
-      <button type="submit" id="loginBtn" class="run-btn" style="margin-top:8px">Login</button>
-    </form>
+    </aside>
+
   </div>
 </div>
 
@@ -353,5 +466,46 @@
 <div id="toast"></div>
 
 <script type="module" src="/src/main.ts"></script>
+<script>
+(function() {
+  var slides = [
+    { src: '/screenshots/01-modules.png', caption: 'Module browser with 704 indexed modules' },
+    { src: '/screenshots/02-query-compose.png', caption: 'Agentic compose with tool calls' },
+    { src: '/screenshots/03-query-result.png', caption: 'Generated HCL with syntax highlighting' },
+    { src: '/screenshots/04-knowledge.png', caption: 'Convention and usage knowledge browser' },
+    { src: '/screenshots/05-index-jobs.png', caption: 'Repository indexing dashboard' },
+    { src: '/screenshots/06-audit-logs.png', caption: 'Audit trail with LLM and MCP calls' },
+  ];
+  var idx = 0;
+  var lb = document.getElementById('lightbox');
+  var img = document.getElementById('lightboxImg');
+  var cap = document.getElementById('lightboxCaption');
+  var ctr = document.getElementById('lightboxCounter');
+
+  function show(i) {
+    idx = (i + slides.length) % slides.length;
+    img.src = slides[idx].src;
+    cap.textContent = slides[idx].caption;
+    ctr.textContent = (idx + 1) + ' / ' + slides.length;
+    lb.classList.add('open');
+  }
+  function hide() { lb.classList.remove('open'); }
+
+  document.querySelector('.landing-screenshot-grid').addEventListener('click', function(e) {
+    var card = e.target.closest('.landing-screenshot');
+    if (card && card.dataset.idx != null) show(+card.dataset.idx);
+  });
+  document.getElementById('lightboxClose').addEventListener('click', hide);
+  document.getElementById('lightboxPrev').addEventListener('click', function() { show(idx - 1); });
+  document.getElementById('lightboxNext').addEventListener('click', function() { show(idx + 1); });
+  lb.addEventListener('click', function(e) { if (e.target === lb) hide(); });
+  document.addEventListener('keydown', function(e) {
+    if (!lb.classList.contains('open')) return;
+    if (e.key === 'Escape') hide();
+    if (e.key === 'ArrowLeft') show(idx - 1);
+    if (e.key === 'ArrowRight') show(idx + 1);
+  });
+})();
+</script>
 </body>
 </html>

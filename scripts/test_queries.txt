@@ -1,0 +1,10 @@
+1. Create a simple S3 bucket with versioning enabled
+2. Create a KMS key for encrypting S3 data with key rotation enabled
+3. Create a VPC with 3 public and 3 private subnets across availability zones
+4. Create an RDS PostgreSQL 16 instance with Multi-AZ and automated backups
+5. Create a Lambda function behind API Gateway v2 HTTP API with a custom domain
+6. Create an ECS Fargate service with ALB, auto-scaling, and CloudWatch logging
+7. Create an EKS cluster with managed node groups, cluster autoscaler, and VPC
+8. Build a complete multi-tier web app: VPC, ALB, ECS Fargate service, RDS PostgreSQL, ElastiCache Redis, S3 for static assets, CloudWatch alarms
+9. Create a serverless event processing pipeline: EventBridge rule triggers Lambda, Lambda writes to DynamoDB and sends notifications via SNS to SQS
+10. Build a secure data platform: VPC with private subnets only, RDS Aurora PostgreSQL cluster, MSK Kafka cluster, Lambda consumers, S3 data lake with KMS encryption, all with security groups and IAM roles

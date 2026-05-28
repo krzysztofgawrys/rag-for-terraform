@@ -4,35 +4,50 @@ import { apiFetch } from '../api';
  * Render a D3 force-directed dependency graph for the given module
  * inside the element with id="graphContainer".
  */
-export async function renderDependencyGraph(module, onNavigate) {
+export async function renderDependencyGraph(module, onNavigate, depth = 1, moduleLookup) {
     const container = document.getElementById('graphContainer');
     container.innerHTML = '<div class="placeholder-msg"><span class="icon">&#x21BB;</span><div>Loading graph...</div></div>';
     const nodesMap = new Map();
     const links = [];
+    // Helper: parse "repo//path" key into {repo, path}
+    function parseKey(key) {
+        const idx = key.indexOf('//');
+        return idx >= 0
+            ? { repo: key.slice(0, idx), path: key.slice(idx + 2) }
+            : { repo: '', path: key };
+    }
     // Selected module as center node
-    nodesMap.set(module.module_name, {
-        id: module.module_name,
+    const selectedKey = `${module.repo}//${module.module_path}`;
+    nodesMap.set(selectedKey, {
+        id: selectedKey,
         name: module.module_name,
         repo: module.repo,
+        path: module.module_path,
+        version: module.version || '',
         type: 'selected',
     });
     // Fetch dependencies (what this module depends on)
     try {
-        const depData = await apiFetch(`/modules/${encodeURIComponent(module.repo)}/${encodeURIComponent(module.module_path)}/dependencies${module.version ? `?version=${encodeURIComponent(module.version)}` : ''}`);
+        const depData = await apiFetch(`/modules/${encodeURIComponent(module.repo)}/${encodeURIComponent(module.module_path)}/dependencies?depth=${depth}${module.version ? `&version=${encodeURIComponent(module.version)}` : ''}`);
         for (const entry of depData.dependency_tree) {
-            // chain is [root, ..., dep] — add each consecutive pair as a link
-            for (let i = 0; i < entry.chain.length - 1; i++) {
-                const src = entry.chain[i];
-                const tgt = entry.chain[i + 1];
-                if (!nodesMap.has(src)) {
-                    nodesMap.set(src, { id: src, name: src, repo: '', type: 'dependency' });
+            const { chain, chain_names, chain_versions } = entry;
+            for (let i = 0; i < chain.length - 1; i++) {
+                const srcKey = chain[i];
+                const tgtKey = chain[i + 1];
+                const srcName = chain_names[i] || srcKey;
+                const tgtName = chain_names[i + 1] || tgtKey;
+                const srcVer = chain_versions?.[i] || '';
+                const tgtVer = chain_versions?.[i + 1] || '';
+                if (!nodesMap.has(srcKey)) {
+                    const info = parseKey(srcKey);
+                    nodesMap.set(srcKey, { id: srcKey, name: srcName, repo: info.repo, path: info.path, version: srcVer, type: 'dependency' });
                 }
-                if (!nodesMap.has(tgt)) {
-                    nodesMap.set(tgt, { id: tgt, name: tgt, repo: entry.dep_repo || '', type: 'dependency' });
+                if (!nodesMap.has(tgtKey)) {
+                    const info = parseKey(tgtKey);
+                    nodesMap.set(tgtKey, { id: tgtKey, name: tgtName, repo: info.repo, path: info.path, version: tgtVer, type: 'dependency' });
                 }
-                // Avoid duplicate links
-                if (!links.some((l) => l.source === src && l.target === tgt)) {
-                    links.push({ source: src, target: tgt });
+                if (!links.some((l) => l.source === srcKey && l.target === tgtKey)) {
+                    links.push({ source: srcKey, target: tgtKey });
                 }
             }
         }
@@ -42,18 +57,49 @@ export async function renderDependencyGraph(module, onNavigate) {
     }
     // Fetch dependents (who depends on this module)
     try {
-        const depData = await apiFetch(`/modules/${encodeURIComponent(module.repo)}/${encodeURIComponent(module.module_path)}/dependents${module.version ? `?version=${encodeURIComponent(module.version)}` : ''}`);
+        const depData = await apiFetch(`/modules/${encodeURIComponent(module.repo)}/${encodeURIComponent(module.module_path)}/dependents?depth=${depth}${module.version ? `&version=${encodeURIComponent(module.version)}` : ''}`);
         for (const dep of depData.dependents) {
-            if (!nodesMap.has(dep.name)) {
-                nodesMap.set(dep.name, { id: dep.name, name: dep.name, repo: dep.repo, type: 'dependent' });
+            const depKey = `${dep.repo}//${dep.path}`;
+            const parts = dep.path ? dep.path.split('/') : [dep.name];
+            const label = parts.length > 1 ? parts.slice(-2).join('/') : parts[0];
+            if (!nodesMap.has(depKey)) {
+                nodesMap.set(depKey, { id: depKey, name: label, repo: dep.repo, path: dep.path, version: dep.version || '', type: 'dependent' });
             }
-            if (!links.some((l) => l.source === dep.name && l.target === module.module_name)) {
-                links.push({ source: dep.name, target: module.module_name });
+            if (!links.some((l) => l.source === depKey && l.target === selectedKey)) {
+                links.push({ source: depKey, target: selectedKey });
             }
         }
     }
     catch {
         // No dependents — that's fine
+    }
+    // Add AWS resources as leaf nodes
+    if (depth <= 1) {
+        // Direct mode: resources only for root
+        if (module.resources?.length) {
+            for (const res of module.resources) {
+                const resKey = `resource::${selectedKey}::${res}`;
+                if (!nodesMap.has(resKey)) {
+                    nodesMap.set(resKey, { id: resKey, name: res, repo: '', path: '', version: '', type: 'resource' });
+                    links.push({ source: selectedKey, target: resKey });
+                }
+            }
+        }
+    }
+    else if (moduleLookup) {
+        // Full chain: add resources for root + dependencies only (not dependents)
+        const moduleNodes = Array.from(nodesMap.values()).filter((n) => (n.type === 'selected' || n.type === 'dependency') && n.repo && n.path);
+        for (const n of moduleNodes) {
+            const mod = moduleLookup(n.repo, n.path);
+            const resources = mod?.resources || [];
+            for (const res of resources) {
+                const resKey = `resource::${n.id}::${res}`;
+                if (!nodesMap.has(resKey)) {
+                    nodesMap.set(resKey, { id: resKey, name: res, repo: '', path: '', version: '', type: 'resource' });
+                    links.push({ source: n.id, target: resKey });
+                }
+            }
+        }
     }
     const nodes = Array.from(nodesMap.values());
     if (nodes.length <= 1 && links.length === 0) {
@@ -73,40 +119,66 @@ export async function renderDependencyGraph(module, onNavigate) {
         .attr('height', '100%')
         .attr('viewBox', `0 0 ${width} ${height}`);
     // Arrow marker
-    svg
-        .append('defs')
-        .append('marker')
+    const defs = svg.append('defs');
+    defs.append('marker')
         .attr('id', 'arrowhead')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 22)
+        .attr('refX', 5)
         .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
+        .attr('markerWidth', 7)
+        .attr('markerHeight', 7)
         .attr('orient', 'auto')
         .append('path')
         .attr('d', 'M0,-5L10,0L0,5')
         .attr('fill', '#4a5568');
     const g = svg.append('g');
     // Zoom
-    svg.call(d3.zoom()
-        .scaleExtent([0.3, 3])
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 3])
         .on('zoom', (event) => {
         g.attr('transform', event.transform);
-    }));
-    // Simulation
+    });
+    svg.call(zoom);
+    // Compute degree per node — high-degree nodes need more space around them
+    const degree = new Map();
+    for (const l of links) {
+        const s = typeof l.source === 'string' ? l.source : l.source.id;
+        const t = typeof l.target === 'string' ? l.target : l.target.id;
+        degree.set(s, (degree.get(s) || 0) + 1);
+        degree.set(t, (degree.get(t) || 0) + 1);
+    }
+    // Simulation — tuned to minimise edge crossings
     const simulation = d3
         .forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id((d) => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-300))
+        .force('link', d3.forceLink(links).id((d) => d.id).distance((l) => {
+        const tgt = l.target;
+        if (tgt.type === 'resource')
+            return 70;
+        // High-degree targets get longer links so their subtrees don't overlap
+        const deg = degree.get(tgt.id) || 1;
+        return 140 + Math.min(deg * 8, 80);
+    }))
+        .force('charge', d3.forceManyBody()
+        .strength((d) => {
+        // Stronger repulsion for high-degree nodes — keeps their neighbours apart
+        const deg = degree.get(d.id) || 1;
+        return -500 - Math.min(deg * 40, 600);
+    })
+        .distanceMax(800))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(30));
-    // Links
+        .force('x', d3.forceX(width / 2).strength(0.02))
+        .force('y', d3.forceY(height / 2).strength(0.08))
+        .force('collision', d3.forceCollide().radius((d) => d.type === 'resource' ? 30 : 60))
+        .alphaDecay(0.015) // run simulation longer for better convergence
+        .velocityDecay(0.5); // less jitter at rest
+    // Links — use <path> with 3 points so marker-mid places arrowhead at center
     const link = g
         .selectAll('.graph-link')
         .data(links)
-        .join('line')
+        .join('path')
         .attr('class', 'graph-link')
-        .attr('marker-end', 'url(#arrowhead)');
+        .attr('fill', 'none')
+        .attr('marker-mid', 'url(#arrowhead)');
     // Nodes
     const node = g
         .selectAll('.graph-node')
@@ -134,13 +206,13 @@ export async function renderDependencyGraph(module, onNavigate) {
     // Node circles
     node
         .append('circle')
-        .attr('r', (d) => (d.type === 'selected' ? 14 : 10))
+        .attr('r', (d) => (d.type === 'selected' ? 14 : d.type === 'resource' ? 6 : 10))
         .attr('class', (d) => `graph-node-circle graph-node-${d.type}`);
     // Node labels
     node
         .append('text')
-        .attr('class', 'graph-node-label')
-        .attr('dy', -18)
+        .attr('class', (d) => `graph-node-label${d.type === 'resource' ? ' graph-resource-label' : ''}`)
+        .attr('dy', (d) => d.type === 'resource' ? -12 : -18)
         .attr('text-anchor', 'middle')
         .text((d) => d.name);
     // Tooltip on hover
@@ -163,19 +235,49 @@ export async function renderDependencyGraph(module, onNavigate) {
         .on('mouseleave', () => {
         tooltip.style('opacity', '0');
     });
-    // Click node → navigate
-    node.on('click', (_event, d) => {
-        if (d.type !== 'selected') {
-            onNavigate(d.name);
+    // Click node → navigate (not for selected or resource nodes)
+    node
+        .style('cursor', (d) => (d.type === 'resource' || d.type === 'selected') ? 'default' : 'pointer')
+        .on('click', (_event, d) => {
+        if (d.type !== 'selected' && d.type !== 'resource' && d.repo && d.path) {
+            onNavigate(d.repo, d.path, d.version || undefined);
         }
     });
+    // Fit graph to container
+    function fitToView() {
+        const pad = 60;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+            if (n.x != null && n.y != null) {
+                minX = Math.min(minX, n.x);
+                minY = Math.min(minY, n.y);
+                maxX = Math.max(maxX, n.x);
+                maxY = Math.max(maxY, n.y);
+            }
+        }
+        if (!isFinite(minX))
+            return;
+        const graphW = maxX - minX + pad * 2;
+        const graphH = maxY - minY + pad * 2;
+        const currentRect = container.getBoundingClientRect();
+        const viewW = currentRect.width || width;
+        const viewH = currentRect.height || height;
+        const scale = Math.min(viewW / graphW, viewH / graphH, 1.5);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const tx = viewW / 2 - cx * scale;
+        const ty = viewH / 2 - cy * scale;
+        svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    }
     // Tick
     simulation.on('tick', () => {
-        link
-            .attr('x1', (d) => d.source.x)
-            .attr('y1', (d) => d.source.y)
-            .attr('x2', (d) => d.target.x)
-            .attr('y2', (d) => d.target.y);
+        link.attr('d', (d) => {
+            const s = d.source, t = d.target;
+            const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
+            return `M${s.x},${s.y} L${mx},${my} L${t.x},${t.y}`;
+        });
         node.attr('transform', (d) => `translate(${d.x},${d.y})`);
     });
+    // Auto-fit once simulation settles
+    simulation.on('end', fitToView);
 }

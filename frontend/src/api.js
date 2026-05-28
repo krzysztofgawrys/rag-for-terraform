@@ -1,5 +1,4 @@
-const API =
-  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+const API = window.location.port === '3000'
     ? `${window.location.protocol}//${window.location.hostname}:8000`
     : '';
 // --- Auth token management ---------------------------------------------------
@@ -27,7 +26,7 @@ export async function apiFetch(path, opts) {
         fetchOpts.credentials = 'include';
     const r = await fetch(API + path, fetchOpts);
     // Try token refresh on 401
-    if (r.status === 401 && _accessToken) {
+    if (r.status === 401 && _authEnabled) {
         const refreshed = await tryRefreshToken();
         if (refreshed) {
             // Retry with new token
@@ -96,5 +95,6 @@ export function esc(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }

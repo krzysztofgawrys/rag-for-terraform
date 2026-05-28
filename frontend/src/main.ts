@@ -81,12 +81,14 @@ async function init(): Promise<void> {
   initTheme();
 
   // Determine auth mode from API
+  let apiReachable = true;
   try {
     const info = await apiFetch<AuthInfo>('/auth/info');
     authMode = info.auth_mode;
   } catch {
     // If /auth/info fails, assume disabled (old API without auth)
     authMode = 'disabled';
+    apiReachable = false;
   }
   setAuthEnabled(authMode !== 'disabled');
 
@@ -122,7 +124,10 @@ async function init(): Promise<void> {
     if (pageId === 'auditlogs') loadAuditLogs();
   });
 
-  if (authMode === 'disabled') {
+  if (authMode === 'disabled' && !apiReachable) {
+    // API unreachable — show landing page
+    navigateTo('login');
+  } else if (authMode === 'disabled') {
     // No auth — go straight to app
     await loadStats();
     await initModulesPage();
