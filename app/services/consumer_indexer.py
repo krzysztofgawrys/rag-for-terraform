@@ -398,7 +398,7 @@ async def _resolve_known_modules(db, usages) -> set[str]:
         result = await db.execute(
             text("""
                 SELECT 1 FROM modules
-                WHERE repo = :repo AND module_path = :path
+                WHERE repo = :repo AND module_path IN (:path, '.')
                 LIMIT 1
             """),
             {"repo": repo, "path": path},

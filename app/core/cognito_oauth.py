@@ -129,7 +129,10 @@ class CognitoOAuthProvider(OAuthAuthorizationServerProvider[
                 row = result.first()
                 if not row:
                     return None
-                return OAuthClientInformationFull.model_validate(row[0])
+                info = row[0]
+                if isinstance(info, str):
+                    info = json.loads(info)
+                return OAuthClientInformationFull.model_validate(info)
         finally:
             await engine.dispose()
 
@@ -144,7 +147,7 @@ class CognitoOAuthProvider(OAuthAuthorizationServerProvider[
                         VALUES (:cid, :info)
                         ON CONFLICT (client_id) DO UPDATE SET client_info = EXCLUDED.client_info
                     """),
-                    {"cid": client_info.client_id, "info": client_info.model_dump(mode="json")},
+                    {"cid": client_info.client_id, "info": json.dumps(client_info.model_dump(mode="json"))},
                 )
                 await db.commit()
         finally:

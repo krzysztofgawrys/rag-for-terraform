@@ -4,7 +4,7 @@ import hljs from 'highlight.js/lib/core';
 import hljsBash from 'highlight.js/lib/languages/bash';
 import hljsJson from 'highlight.js/lib/languages/json';
 import hclLanguage from '../hcl-lang';
-import { apiFetch, esc, toast } from '../api';
+import { apiFetch, esc, toast, getAccessToken } from '../api';
 import type { QueryType, Source } from '../types';
 import { ChipSelect } from '../chip-select';
 
@@ -165,9 +165,13 @@ async function runQuery(): Promise<void> {
   try {
     armStallTimer();
 
+    const streamHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = getAccessToken();
+    if (token) streamHeaders['Authorization'] = `Bearer ${token}`;
+
     const response = await fetch(API + '/query/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: streamHeaders,
       body,
       signal: controller.signal,
     });

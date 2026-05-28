@@ -147,7 +147,16 @@ def _resolve_source(source: str) -> str:
       - ../relative/path (returns empty — can't resolve without context)
     """
     if source.startswith("./") or source.startswith("../"):
-        return ""  # relative modules — skip
+        return ""  # relative modules - skip
+
+    # Terraform Registry format: org/name/provider//subpath
+    # e.g. "terraform-aws-modules/ecs/aws//modules/cluster" -> "terraform-aws-ecs/modules/cluster"
+    registry_m = re.match(r"^([^/]+)/([^/]+)/([^/]+?)(?://(.*))?$", source)
+    if registry_m and not source.startswith("git") and ":" not in source and "." not in registry_m.group(1):
+        org, name, provider = registry_m.group(1), registry_m.group(2), registry_m.group(3)
+        subpath = registry_m.group(4) or ""
+        repo_name = f"terraform-{provider}-{name}"
+        return f"{repo_name}/{subpath}" if subpath else repo_name
 
     # Strip git:: prefix
     clean = re.sub(r'^git::', '', source)

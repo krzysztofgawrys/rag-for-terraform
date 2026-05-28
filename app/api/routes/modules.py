@@ -144,6 +144,7 @@ async def get_dependencies(repo: str, module_path: str, version: str | None = No
         module_path=module_path,
         depth=min(depth, 20),
         version=version,
+        repo=repo,
     )
     return {"dependency_tree": result}
 

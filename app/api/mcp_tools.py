@@ -10,6 +10,7 @@ from typing import Optional
 
 import structlog
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.core.audit import audit_mcp_tool
 from app.core.config import get_settings
@@ -49,7 +50,16 @@ def _create_mcp() -> FastMCP:
         from mcp.server.auth.settings import (
             AuthSettings, ClientRegistrationOptions, RevocationOptions,
         )
+        from urllib.parse import urlparse
         from app.core.cognito_oauth import CognitoOAuthProvider
+
+        # Behind ALB: allow the external domain in Host header
+        parsed = urlparse(settings.mcp_oauth_issuer_url)
+        ts = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[parsed.netloc, f"{parsed.netloc}:*"],
+            allowed_origins=[settings.mcp_oauth_issuer_url],
+        )
 
         provider = CognitoOAuthProvider(settings)
         server = FastMCP(
@@ -57,6 +67,7 @@ def _create_mcp() -> FastMCP:
             stateless_http=True,
             instructions=_MCP_INSTRUCTIONS,
             auth_server_provider=provider,
+            transport_security=ts,
             auth=AuthSettings(
                 issuer_url=settings.mcp_oauth_issuer_url,
                 resource_server_url=f"{settings.mcp_oauth_issuer_url}/mcp",
@@ -76,6 +87,11 @@ def _create_mcp() -> FastMCP:
         name="terraform-rag",
         stateless_http=True,
         instructions=_MCP_INSTRUCTIONS,
+        # No ALB - disable DNS rebinding protection (default host=127.0.0.1
+        # would auto-enable it, blocking non-localhost requests)
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+        ),
     )
 
 
@@ -577,7 +593,7 @@ async def get_dependencies(repo: str, module_path: str, depth: int = 3) -> str:
         module_path: Module path relative to repo root.
         depth:       Dependency tree depth (default 3).
     """
-    tree = await graph_db.get_dependency_tree(module_path, depth=depth)
+    tree = await graph_db.get_dependency_tree(module_path, depth=depth, repo=repo)
     dependents = await graph_db.find_dependents(module_path, repo)
 
     lines = [f"## Dependencies for `{repo}//{module_path}`", ""]

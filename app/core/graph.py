@@ -115,7 +115,7 @@ async def upsert_module(module: ParsedModule, db=None):
                     dep_repo=dep_repo,
                     dep_path=dep_path,
                     dep_version=dep_version,
-                    dep_name=dep_path.strip("/").split("/")[-1] if dep_path else dep_repo,
+                    dep_name=(dep_repo if dep_path in ("", ".") else dep_path.strip("/").split("/")[-1]),
                 ),
             )
         await db.commit()
@@ -159,7 +159,7 @@ async def find_dependents(module_path: str, repo: str | None = None,
     if depth <= 1:
         query = f"""
             SELECT DISTINCT
-                COALESCE(m.module_name, split_part(md.parent_path, '/', -1)) AS name,
+                COALESCE(m.module_name, CASE WHEN md.parent_path = '.' THEN md.parent_repo ELSE split_part(md.parent_path, '/', -1) END) AS name,
                 md.parent_repo AS repo,
                 md.parent_path AS path,
                 md.parent_version AS version
@@ -192,7 +192,7 @@ async def find_dependents(module_path: str, repo: str | None = None,
                 WHERE rd.lvl < :depth
             )
             SELECT DISTINCT
-                COALESCE(m.module_name, split_part(rd.parent_path, '/', -1)) AS name,
+                COALESCE(m.module_name, CASE WHEN rd.parent_path = '.' THEN rd.parent_repo ELSE split_part(rd.parent_path, '/', -1) END) AS name,
                 rd.parent_repo AS repo,
                 rd.parent_path AS path,
                 rd.parent_version AS version
@@ -251,7 +251,7 @@ async def get_direct_dependencies(
                     dep_repo AS repo,
                     dep_path AS path,
                     dep_version AS version,
-                    dep_name AS name
+                    CASE WHEN dep_path = '.' THEN dep_repo ELSE dep_name END AS name
                 FROM module_dependencies
                 WHERE parent_repo = :repo
                   AND parent_path = :path
@@ -264,9 +264,11 @@ async def get_direct_dependencies(
 
 
 async def get_dependency_tree(module_path: str, depth: int = 3,
-                             version: str | None = None) -> list[dict]:
+                             version: str | None = None,
+                             repo: str | None = None) -> list[dict]:
     """Return dependency tree (up to N levels deep)."""
     version_filter = "AND md.parent_version = :version" if version else ""
+    repo_filter = "AND md.parent_repo = :repo" if repo else ""
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -283,8 +285,8 @@ async def get_dependency_tree(module_path: str, depth: int = 3,
                             md.dep_repo || '//' || md.dep_path
                         ] AS chain,
                         ARRAY[
-                            COALESCE(m.module_name, split_part(md.parent_path, '/', -1)),
-                            md.dep_name
+                            COALESCE(m.module_name, CASE WHEN md.parent_path = '.' THEN md.parent_repo ELSE split_part(md.parent_path, '/', -1) END),
+                            CASE WHEN md.dep_path = '.' THEN md.dep_repo ELSE md.dep_name END
                         ] AS chain_names,
                         ARRAY[
                             md.parent_version,
@@ -299,6 +301,7 @@ async def get_dependency_tree(module_path: str, depth: int = 3,
                      AND m.module_path = md.parent_path
                      AND m.version = md.parent_version
                     WHERE md.parent_path = :path
+                      {repo_filter}
                       {version_filter}
 
                     UNION ALL
@@ -310,7 +313,7 @@ async def get_dependency_tree(module_path: str, depth: int = 3,
                         md.dep_version,
                         md.dep_name,
                         dt.chain || (md.dep_repo || '//' || md.dep_path),
-                        dt.chain_names || md.dep_name,
+                        dt.chain_names || CASE WHEN md.dep_path = '.' THEN md.dep_repo ELSE md.dep_name END,
                         dt.chain_versions || md.dep_version,
                         dt.visited || (md.dep_repo || '/' || md.dep_path),
                         dt.depth + 1
@@ -325,6 +328,6 @@ async def get_dependency_tree(module_path: str, depth: int = 3,
                 SELECT DISTINCT chain, chain_names, chain_versions, dep_name, dep_repo, dep_path
                 FROM dep_tree
             """),
-            dict(path=module_path, version=version, max_depth=depth),
+            dict(path=module_path, repo=repo, version=version, max_depth=depth),
         )
         return [dict(r._mapping) for r in result.fetchall()]

@@ -60,17 +60,20 @@ async def query(request: QueryRequest, user: AuthenticatedUser = require_user, d
 class DependencyRequest(BaseModel):
     module_path: str
     repo: Optional[str] = None
-    version: str = "latest"
+    version: Optional[str] = None
     depth: int = 3
 
 
 @router.post("/dependencies")
 async def get_dependencies(req: DependencyRequest, user: AuthenticatedUser = require_user):
     """Full dependency tree for a module."""
+    # Treat "latest" as no version filter - there is no literal "latest"
+    # version in the dependency table; it stores actual git tags.
+    version = req.version if req.version and req.version != "latest" else None
     tree = await graph_db.get_dependency_tree(req.module_path, depth=req.depth,
-                                              version=req.version)
+                                              version=version, repo=req.repo)
     dependents = await graph_db.find_dependents(req.module_path, req.repo,
-                                                version=req.version)
+                                                version=version)
     providers = []
     # Find modules that provide outputs matching this module's variables
     # (useful for wiring new modules)

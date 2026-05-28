@@ -479,7 +479,7 @@ async def query(request: QueryRequest, db) -> QueryResponse:
     # Enrich with dependencies from graph
     graph_context = ""
     if similar:
-        deps = await graph_db.get_dependency_tree(similar[0]["module_path"], depth=2)
+        deps = await graph_db.get_dependency_tree(similar[0]["module_path"], depth=2, repo=similar[0].get("repo"))
         if deps:
             graph_context = "\n\nDependency chains:\n" + "\n".join(
                 " -> ".join(d["chain"]) for d in deps[:5]
@@ -585,7 +585,7 @@ async def stream_query(request: QueryRequest, db):
     # Build context
     graph_context = ""
     if similar:
-        deps = await graph_db.get_dependency_tree(similar[0]["module_path"], depth=2)
+        deps = await graph_db.get_dependency_tree(similar[0]["module_path"], depth=2, repo=similar[0].get("repo"))
         if deps:
             graph_context = "\n\nDependency chains:\n" + "\n".join(
                 " -> ".join(d["chain"]) for d in deps[:5]
