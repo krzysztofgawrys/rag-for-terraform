@@ -59,11 +59,11 @@ class Settings(BaseSettings):
     description_llm_temperature: float = 0.2
 
     # Git / Repo cache
-    repo_cache_dir: str = "/tmp/repo_cache"
+    repo_cache_dir: str = "/var/lib/terraform-rag/repos"
 
     # Versioning — git tag discovery
-    tag_pattern: str = r"^.+$"                      # all non-empty tags
-    max_tags_to_index: int = 10000                   # safety cap
+    tag_pattern: str = r"^.+$"                        # all non-empty tags (override via TAG_PATTERN)
+    max_tags_to_index: int = 50                      # safety cap (override via MAX_TAGS_TO_INDEX)
 
     # Retriever — reference code injection
     retriever_fetch_reference_code: bool = True   # fetch raw HCL for best-matching usage snippets
@@ -118,6 +118,13 @@ class Settings(BaseSettings):
             print(
                 "FATAL: JWT_SECRET is still set to 'change-me' with "
                 f"AUTH_MODE={self.auth_mode}. Set a strong random secret.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if self.auth_mode != "disabled" and self.frontend_url.strip() == "*":
+            print(
+                "FATAL: FRONTEND_URL='*' with AUTH_MODE enabled is a CSRF risk. "
+                "Set explicit origin(s).",
                 file=sys.stderr,
             )
             sys.exit(1)

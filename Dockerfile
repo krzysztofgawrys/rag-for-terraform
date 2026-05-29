@@ -88,8 +88,8 @@ COPY --from=model-cache /opt/hf-cache /opt/hf-cache
 # Non-root user — runs as UID 1000
 RUN groupadd --gid 1000 app \
  && useradd  --uid 1000 --gid app --shell /bin/bash --create-home app \
- && mkdir -p /tmp/repo_cache \
- && chown -R app:app /opt/hf-cache /tmp/repo_cache
+ && mkdir -p /var/lib/terraform-rag/repos \
+ && chown -R app:app /opt/hf-cache /var/lib/terraform-rag/repos
 
 WORKDIR /app
 

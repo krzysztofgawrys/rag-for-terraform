@@ -22,7 +22,7 @@ services:
       - ./app:/app/app
       - ./migrations:/app/migrations
       - ./scripts:/app/scripts
-      - repo_cache:/tmp/repo_cache
+      - repo_cache:/var/lib/terraform-rag/repos
     restart: unless-stopped
 
   worker:
@@ -46,7 +46,7 @@ services:
       - ./app:/app/app
       - ./migrations:/app/migrations
       - ./scripts:/app/scripts
-      - repo_cache:/tmp/repo_cache
+      - repo_cache:/var/lib/terraform-rag/repos
     secrets:
       - deploy_key
     restart: unless-stopped

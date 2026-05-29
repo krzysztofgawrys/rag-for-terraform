@@ -97,7 +97,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 
     response.set_cookie(
         key="refresh_token", value=refresh,
-        httponly=True, samesite="lax", secure=True,  # secure=True in prod behind HTTPS
+        httponly=True, samesite="strict", secure=True,  # secure=True in prod behind HTTPS
         max_age=settings.jwt_refresh_ttl_days * 86400,
         path="/auth",
     )
@@ -166,7 +166,7 @@ async def refresh_token_from_body(
 
     response.set_cookie(
         key="refresh_token", value=new_refresh,
-        httponly=True, samesite="lax", secure=True,
+        httponly=True, samesite="strict", secure=True,
         max_age=settings.jwt_refresh_ttl_days * 86400,
         path="/auth",
     )
