@@ -80,6 +80,9 @@ async def _get_alb_public_key(kid: str, region: str) -> Any:
 # Token helpers (local mode)
 # ---------------------------------------------------------------------------
 
+_JWT_AUDIENCE = "terraform-rag"
+
+
 def _create_access_token(user_id: str, email: str, role: str) -> str:
     settings = get_settings()
     payload = {
@@ -87,6 +90,7 @@ def _create_access_token(user_id: str, email: str, role: str) -> str:
         "email": email,
         "role": role,
         "type": "access",
+        "aud": _JWT_AUDIENCE,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_ttl_minutes),
         "iat": datetime.now(timezone.utc),
     }
@@ -98,6 +102,7 @@ def _create_refresh_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
         "type": "refresh",
+        "aud": _JWT_AUDIENCE,
         "exp": datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_ttl_days),
         "iat": datetime.now(timezone.utc),
     }
@@ -106,7 +111,7 @@ def _create_refresh_token(user_id: str) -> str:
 
 def _decode_local_jwt(token: str) -> dict:
     settings = get_settings()
-    return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"], audience=_JWT_AUDIENCE)
 
 
 # ---------------------------------------------------------------------------

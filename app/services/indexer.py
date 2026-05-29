@@ -452,6 +452,25 @@ def _is_subsequence(needle: list[str], haystack: list[str]) -> bool:
 
 # -- Git helpers --------------------------------------------------------------
 
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "[::1]"}
+
+
+def _validate_repo_url(repo_url: str) -> None:
+    """Reject dangerous git clone URLs (file://, internal hosts, metadata)."""
+    url_lower = repo_url.lower().strip()
+    if url_lower.startswith("file://") or url_lower.startswith("ftp://"):
+        raise ValueError(f"Blocked protocol in repo URL: {repo_url}")
+    # Extract hostname
+    import re
+    m = re.match(r"(?:git@|ssh://(?:[^@]+@)?)([^:/]+)", url_lower)
+    if not m:
+        m = re.match(r"https?://([^/:]+)", url_lower)
+    if m:
+        host = m.group(1)
+        if host in _BLOCKED_HOSTS or host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
+            raise ValueError(f"Blocked internal host in repo URL: {host}")
+
+
 def _clone_or_pull(repo_url: str, branch: str,
                    checkout_ref: str | None = None) -> Path:
     repo_name = _repo_name_from_url(repo_url)
@@ -467,6 +486,8 @@ def _clone_or_pull(repo_url: str, branch: str,
         if not checkout_ref:
             repo.remotes.origin.pull()
     else:
+        # Validate URL protocol - block file://, ftp://, and internal hosts
+        _validate_repo_url(repo_url)
         log.info("cloning_repo", url=repo_url, branch=branch)
         # Use git CLI directly — GitPython's clone_from has issues with
         # multi_options/no_single_branch in some versions

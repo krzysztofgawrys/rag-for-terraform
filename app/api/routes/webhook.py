@@ -114,17 +114,15 @@ def _validate_clone_url(repo_url: str) -> None:
     import re
     allowed = {h.strip().lower() for h in settings.webhook_allowed_hosts.split(",") if h.strip()}
     if not allowed:
-        return
+        raise HTTPException(status_code=403, detail="Webhook host allowlist not configured")
     # Extract hostname from SSH (git@host:...) or HTTPS (https://host/...)
     m = re.match(r"(?:git@|ssh://(?:[^@]+@)?)([^:/]+)", repo_url)
     if not m:
         m = re.match(r"https?://([^/]+)", repo_url)
     hostname = m.group(1).lower() if m else ""
     if hostname not in allowed:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Clone host '{hostname}' not in WEBHOOK_ALLOWED_HOSTS",
-        )
+        log.warning("webhook_host_rejected", hostname=hostname)
+        raise HTTPException(status_code=403, detail="Webhook host not allowed")
 
 
 async def _enqueue_job(repo_url: str, branch: str,

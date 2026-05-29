@@ -95,16 +95,22 @@ def _create_mcp() -> FastMCP:
         log.info("mcp_oauth_enabled", issuer=settings.mcp_oauth_issuer_url)
         return server
 
+    # Build allowed_hosts from frontend_url + localhost defaults
+    from urllib.parse import urlparse
+    allowed_hosts = ["127.0.0.1", "127.0.0.1:8000", "localhost", "localhost:8000"]
+    for origin in settings.frontend_url.split(","):
+        parsed = urlparse(origin.strip())
+        if parsed.hostname and parsed.hostname not in ("127.0.0.1", "localhost"):
+            allowed_hosts.append(parsed.netloc)
+            allowed_hosts.append(parsed.hostname)
+
     return FastMCP(
         name="terraform-rag",
         stateless_http=True,
         instructions=_MCP_INSTRUCTIONS,
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
-            allowed_hosts=[
-                "127.0.0.1", "127.0.0.1:8000",
-                "localhost", "localhost:8000",
-            ],
+            allowed_hosts=allowed_hosts,
         ),
     )
 

@@ -74,6 +74,15 @@ def _parse_locator(source_locator: str) -> tuple | None:
     line_start = int(m.group(4)) if m.group(4) else None
     line_end = int(m.group(5)) if m.group(5) else None
 
+    # Validate commit: hex SHA, HEAD, or tag/branch name
+    if not re.match(r'^[a-fA-F0-9]{7,40}$|^HEAD$|^[a-zA-Z0-9._/-]+$', commit):
+        log.warning("invalid_commit_ref", commit=commit)
+        return None
+    # Reject path traversal in file_path
+    if '..' in file_path or file_path.startswith('/'):
+        log.warning("path_traversal_rejected", file_path=file_path)
+        return None
+
     return repo_name, commit, file_path, line_start, line_end
 
 
@@ -88,6 +97,9 @@ async def _fetch_from_cache(
     import asyncio
 
     repo_dir = os.path.join(settings.repo_cache_dir, repo_name)
+    if not os.path.realpath(repo_dir).startswith(os.path.realpath(settings.repo_cache_dir)):
+        log.warning("path_traversal_rejected", repo=repo_name)
+        return None
     if not os.path.isdir(repo_dir):
         log.warning("repo_not_in_cache", repo=repo_name)
         return None

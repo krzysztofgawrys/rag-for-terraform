@@ -81,11 +81,9 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
     user = result.mappings().first()
     if not user or not user["password_hash"]:
         raise HTTPException(401, "Invalid credentials")
-    if not user["is_active"]:
-        raise HTTPException(403, "Account disabled")
 
     import bcrypt
-    if not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
+    if not user["is_active"] or not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
         raise HTTPException(401, "Invalid credentials")
 
     # Update last_seen
