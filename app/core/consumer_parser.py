@@ -50,9 +50,15 @@ def parse_consumer_repo(
     repo_path = Path(repo_dir)
     all_usages = []
 
+    resolved_root = repo_path.resolve()
     for tf_file in sorted(repo_path.rglob("*.tf")):
         # Skip .terraform directories
         if ".terraform" in tf_file.parts:
+            continue
+        # Reject symlinks that escape the repo directory
+        try:
+            tf_file.resolve().relative_to(resolved_root)
+        except ValueError:
             continue
 
         rel_path = str(tf_file.relative_to(repo_path))

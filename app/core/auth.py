@@ -44,7 +44,7 @@ class AuthenticatedUser(BaseModel):
 _ANONYMOUS = AuthenticatedUser(
     id=UUID("00000000-0000-0000-0000-000000000000"),
     email="anonymous",
-    role="admin",
+    role="readonly",
     display_name="Anonymous",
     auth_method="anonymous",
 )

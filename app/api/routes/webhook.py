@@ -30,9 +30,10 @@ async def github_webhook(
 ):
     body = await request.body()
 
-    # HMAC verification (required if secret is set)
-    if settings.github_webhook_secret:
-        _verify_github_signature(body, x_hub_signature_256)
+    # HMAC verification (always required)
+    if not settings.github_webhook_secret:
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+    _verify_github_signature(body, x_hub_signature_256)
 
     if x_github_event != "push":
         return {"status": "ignored", "reason": f"event={x_github_event}"}
@@ -78,10 +79,11 @@ async def gitlab_webhook(
     request: Request,
     x_gitlab_token: Optional[str] = Header(None),
 ):
-    # GitLab token verification (Secret Token from webhook settings)
-    if settings.gitlab_webhook_token:
-        if x_gitlab_token != settings.gitlab_webhook_token:
-            raise HTTPException(status_code=401, detail="Invalid GitLab token")
+    # GitLab token verification (always required)
+    if not settings.gitlab_webhook_token:
+        raise HTTPException(status_code=503, detail="Webhook token not configured")
+    if x_gitlab_token != settings.gitlab_webhook_token:
+        raise HTTPException(status_code=401, detail="Invalid GitLab token")
 
     payload = await request.json()
     event = payload.get("object_kind", "")

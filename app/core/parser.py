@@ -120,7 +120,15 @@ def _find_module_dirs(repo_dir: Path) -> list[Path]:
     A directory is a module if it contains .tf files and is NOT a subdirectory
     of another module (avoids duplicates for nested modules/).
     """
-    tf_dirs = {p.parent for p in repo_dir.rglob("*.tf")}
+    resolved_root = repo_dir.resolve()
+    tf_dirs: set[Path] = set()
+    for p in repo_dir.rglob("*.tf"):
+        # Reject symlinks that escape the repo directory
+        try:
+            p.resolve().relative_to(resolved_root)
+        except ValueError:
+            continue
+        tf_dirs.add(p.parent)
     # Filter out .terraform directories (provider cache)
     return [
         d for d in sorted(tf_dirs)

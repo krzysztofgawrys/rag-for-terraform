@@ -1,3 +1,5 @@
+import sys
+
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -110,7 +112,19 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"   # ignore unknown variables from .env instead of raising error
 
+    def validate_secrets(self) -> None:
+        """Abort startup when auth is enabled but secrets are still defaults."""
+        if self.auth_mode in ("local", "sso") and self.jwt_secret == "change-me":
+            print(
+                "FATAL: JWT_SECRET is still set to 'change-me' with "
+                f"AUTH_MODE={self.auth_mode}. Set a strong random secret.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    s.validate_secrets()
+    return s

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js/lib/core';
@@ -293,7 +294,7 @@ async function runQuery(): Promise<void> {
               if (od) {
                 // Save scroll position before re-render
                 const prevScroll = block ? block.scrollTop : 0;
-                od.innerHTML = marked.parse(answerText) as string;
+                od.innerHTML = DOMPurify.sanitize(marked.parse(answerText) as string);
                 if (block) {
                   if (!userScrolledUp) {
                     // Auto-scroll to bottom
@@ -377,7 +378,7 @@ function renderFinalResult(answer: string, sources: Source[]): void {
   preserved.forEach(el => answerBlock.appendChild(el));
   const outputDiv = document.createElement('div');
   outputDiv.className = 'agent-output';
-  outputDiv.innerHTML = marked.parse(answer) as string;
+  outputDiv.innerHTML = DOMPurify.sanitize(marked.parse(answer) as string);
   answerBlock.appendChild(outputDiv);
 
   // Append sources
