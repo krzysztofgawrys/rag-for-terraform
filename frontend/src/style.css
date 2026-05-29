@@ -1048,6 +1048,28 @@ select { cursor: pointer; }
   text-decoration: underline;
 }
 
+/* -- Site-wide footer (visible when logged in) --------- */
+.site-footer {
+  display: none;
+  text-align: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.site-footer p {
+  font-size: 11px;
+  color: var(--text3);
+  margin: 0;
+}
+.site-footer a {
+  color: var(--text3);
+  text-decoration: none;
+}
+.site-footer a:hover {
+  color: var(--cyan);
+  text-decoration: underline;
+}
+
 /* -- Lightbox ------------------------------------------ */
 .lightbox {
   display: none;

@@ -42,15 +42,18 @@ function navigate(): void {
     b.classList.toggle('active', b.dataset.page === pageId);
   });
 
-  // Hide nav and stats when on login page
+  // Hide nav, stats, and footer when on login page
   const navEl = document.querySelector('nav');
   const statsBar = document.getElementById('statsBar');
+  const siteFooter = document.getElementById('siteFooter');
   if (pageId === 'login') {
     navEl?.classList.add('hidden');
     statsBar?.classList.add('hidden');
+    if (siteFooter) siteFooter.style.display = 'none';
   } else {
     navEl?.classList.remove('hidden');
     statsBar?.classList.remove('hidden');
+    if (siteFooter) siteFooter.style.display = 'block';
   }
 
   onNavigate?.(pageId);
