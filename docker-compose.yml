@@ -36,7 +36,7 @@ services:
     env_file: .env
     environment:
       # Forces correct SSH key permissions without changing the file on host
-      GIT_SSH_COMMAND: "ssh -i /run/secrets/deploy_key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
+      GIT_SSH_COMMAND: "ssh -i /run/secrets/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
     depends_on:
       postgres:
         condition: service_healthy

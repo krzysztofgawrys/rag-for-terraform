@@ -66,7 +66,7 @@ async def _get_alb_public_key(kid: str, region: str) -> Any:
 
     import httpx
     url = f"https://public-keys.auth.elb.{region}.amazonaws.com/{kid}"
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=False) as client:
         resp = await client.get(url, timeout=5)
         resp.raise_for_status()
 

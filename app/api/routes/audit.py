@@ -56,10 +56,15 @@ async def list_audit_logs(
     )
     rows = [dict(r) for r in result.mappings().all()]
 
-    # Serialize datetimes and UUIDs
+    # Serialize datetimes and UUIDs; redact prompt data unless show_prompts=true
+    from app.core.config import get_settings
+    show = get_settings().audit_log_llm_prompts
     for row in rows:
         row["id"] = str(row["id"])
         row["created_at"] = row["created_at"].isoformat() if row["created_at"] else None
+        if not show and row.get("category") == "llm":
+            row["request_data"] = {"redacted": True}
+            row["response_data"] = {"redacted": True}
 
     return {"total": total, "limit": limit, "offset": offset, "items": rows}
 

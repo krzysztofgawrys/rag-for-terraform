@@ -778,6 +778,13 @@ async def agent_stream_query(
                 log.warning("agent_empty_turn", turn=turn, backend=backend)
                 break
 
+            # Wall-clock budget
+            elapsed = time.monotonic() - t0
+            if elapsed > settings.agent_timeout_seconds:
+                log.warning("agent_timeout", elapsed_s=int(elapsed), max_s=settings.agent_timeout_seconds, tool_calls=tool_call_count)
+                yield f"data: {_json.dumps({'type': 'token', 'token': f'\\n\\n---\\n*Agent timed out after {int(elapsed)}s. Output may be incomplete.*'})}\n\n"
+                break
+
         else:
             log.warning("agent_max_turns_exceeded", max_turns=max_turns, tool_calls=tool_call_count)
             yield f"data: {_json.dumps({'type': 'token', 'token': f'\\n\\n---\\n*Agent reached maximum of {max_turns} turns. Output may be incomplete.*'})}\n\n"
@@ -905,6 +912,10 @@ async def agent_query(request: QueryRequest, db) -> QueryResponse:
         if result["stop"]:
             break
         if not result["tool_calls"] and not result["text_blocks"]:
+            break
+        elapsed = time.monotonic() - t0
+        if elapsed > settings.agent_timeout_seconds:
+            log.warning("agent_timeout", elapsed_s=int(elapsed), max_s=settings.agent_timeout_seconds)
             break
 
     latency_ms = int((time.monotonic() - t0) * 1000)

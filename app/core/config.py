@@ -102,7 +102,11 @@ class Settings(BaseSettings):
 
     # Audit logging
     audit_log_enabled: bool = True
-    audit_log_llm_prompts: bool = True   # False → redacts prompt/response text (keeps lengths)
+    audit_log_llm_prompts: bool = False  # True → stores full prompt/response text in audit_logs
+    audit_retention_days: int = 90       # auto-purge audit logs older than this (0 = keep forever)
+
+    # Agent wall-clock budget (seconds). Agent loop aborts if exceeded.
+    agent_timeout_seconds: int = 300
 
     # Webhooks (HMAC secret per provider)
     github_webhook_secret: str = ""

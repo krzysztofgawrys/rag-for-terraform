@@ -262,7 +262,7 @@ async def _write_to_db(*, category, action, status, duration_ms,
             if ephemeral_engine is not None:
                 await ephemeral_engine.dispose()
     except Exception:
-        log.warning("audit_db_write_failed", error=traceback.format_exc())
+        log.error("audit_db_write_failed", category=category, action=action, error=traceback.format_exc())
 
 
 # -- MCP tool decorator -------------------------------------------------------

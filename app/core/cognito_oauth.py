@@ -69,7 +69,7 @@ async def _get_cognito_jwks(region: str, pool_id: str) -> dict[str, Any]:
         return _cognito_jwks
 
     url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/jwks.json"
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=False) as client:
         resp = await client.get(url, timeout=5)
         resp.raise_for_status()
     _cognito_jwks = resp.json()
@@ -161,11 +161,17 @@ class CognitoOAuthProvider(OAuthAuthorizationServerProvider[
         self, client: OAuthClientInformationFull, params: AuthorizationParams,
     ) -> str:
         # Validate redirect_uri against the client's registered URIs
-        requested_uri = str(params.redirect_uri)
-        registered_uris = [str(u) for u in (client.redirect_uris or [])]
-        if registered_uris and requested_uri not in registered_uris:
+        # Compare normalised URLs to prevent case/fragment bypasses
+        from urllib.parse import urlparse
+        def _normalise(u: str) -> str:
+            p = urlparse(str(u))
+            return f"{p.scheme.lower()}://{p.netloc.lower()}{p.path.rstrip('/')}"
+
+        requested_norm = _normalise(params.redirect_uri)
+        registered_norms = [_normalise(u) for u in (client.redirect_uris or [])]
+        if registered_norms and requested_norm not in registered_norms:
             raise ValueError(
-                f"redirect_uri '{requested_uri}' not in client's registered URIs"
+                f"redirect_uri '{params.redirect_uri}' not in client's registered URIs"
             )
 
         state = secrets.token_urlsafe(32)
@@ -486,7 +492,7 @@ class CognitoOAuthProvider(OAuthAuthorizationServerProvider[
 
         # Exchange Cognito code for tokens
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(follow_redirects=False) as client:
                 resp = await client.post(
                     self._cognito_token_url,
                     data={
