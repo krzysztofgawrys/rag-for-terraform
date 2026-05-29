@@ -472,9 +472,11 @@ async def list_modules(
             tags_str = ", ".join(m.get("tags") or [])
             resources_str = ", ".join((m.get("resources") or [])[:4])
             sim = int(m.get("similarity", 0) * 100)
+            lic = m.get("license") or "Unknown"
             lines.append(
                 f"### {m['module_name']} (similarity {sim}%)\n"
                 f"- Repo: `{m['repo']}`  Path: `{m['module_path']}`  Version: `{m.get('version', '?')}`\n"
+                f"- License: {lic}\n"
                 f"- Tags: {tags_str or '—'}\n"
                 f"- Resources: {resources_str or '—'}\n"
                 f"- Description: {(m.get('description') or '—')[:120]}\n"
@@ -502,7 +504,8 @@ async def list_modules(
         result = await db.execute(
             text(f"""
                 SELECT DISTINCT ON (repo, module_path)
-                       repo, module_name, module_path, version, tags, resources, description
+                       repo, module_name, module_path, version, tags, resources,
+                       description, license
                 FROM modules
                 WHERE {where}
                 ORDER BY repo, module_path, indexed_at DESC
@@ -519,9 +522,11 @@ async def list_modules(
     for m in modules:
         tags_str = ", ".join(m.get("tags") or [])
         resources_str = ", ".join((m.get("resources") or [])[:4])
+        lic = m.get("license") or "Unknown"
         lines.append(
             f"### {m['module_name']}\n"
             f"- Repo: `{m['repo']}`  Path: `{m['module_path']}`  Version: `{m.get('version', '?')}`\n"
+            f"- License: {lic}\n"
             f"- Tags: {tags_str or '—'}\n"
             f"- Resources: {resources_str or '—'}\n"
             f"- Description: {(m.get('description') or '—')[:120]}\n"
@@ -552,7 +557,7 @@ async def get_module_details(repo: str, module_path: str) -> str:
         result = await db.execute(
             text("""
                 SELECT repo, module_name, module_path, version, tags,
-                       variables, outputs, resources, description
+                       variables, outputs, resources, description, license
                 FROM modules
                 WHERE repo = :repo AND module_path = :module_path
                 ORDER BY
@@ -596,6 +601,7 @@ async def get_module_details(repo: str, module_path: str) -> str:
         "repo": repo,
     })
 
+    lic = m.get("license") or "Unknown"
     lines = [
         f"## {m['module_name']}",
         "",
@@ -603,6 +609,7 @@ async def get_module_details(repo: str, module_path: str) -> str:
         f"**Path:** `{m['module_path']}`",
         f"**Latest version:** `{latest_pinned}`",
         f"**Source:** `{source_url}`",
+        f"**License:** {lic}",
         f"**Tags:** {', '.join(m.get('tags') or []) or '—'}",
         "",
         f"### Description",
@@ -798,11 +805,34 @@ async def fetch_example_code(source_locator: str) -> str:
         source_locator: Locator string (e.g. 'tf-infra-prod@abc123:eu-west-1/blaise/main.tf:L1-L45').
     """
     from app.services.git_fetcher import fetch_fragment
+    from sqlalchemy import text as sa_text
 
     fragment = await fetch_fragment(source_locator)
-    if fragment:
-        return f"```hcl\n{fragment}\n```\n\nSource: `{source_locator}`"
-    return f"Could not fetch code fragment from `{source_locator}`. The repo may not be in the local cache."
+    if not fragment:
+        return f"Could not fetch code fragment from `{source_locator}`. The repo may not be in the local cache."
+
+    # Look up license for the source repo
+    repo_name = source_locator.split("@")[0] if "@" in source_locator else source_locator.split(":")[0]
+    lic = None
+    try:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                sa_text("SELECT license FROM modules WHERE repo = :repo AND license IS NOT NULL LIMIT 1"),
+                {"repo": repo_name},
+            )
+            lic = row.scalar_one_or_none()
+    except Exception:
+        pass
+
+    # Build attribution header
+    attr_lines = [f"# Source: {source_locator}"]
+    if lic:
+        attr_lines.append(f"# License: {lic}")
+    else:
+        attr_lines.append("# License: Unknown - check source repository before reuse")
+    attribution = "\n".join(attr_lines)
+
+    return f"```hcl\n{attribution}\n\n{fragment}\n```"
 
 
 @mcp.tool()

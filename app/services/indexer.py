@@ -62,6 +62,47 @@ async def _flush_stats(job_id, stats, _last_flush: dict, table: str = "index_job
         await engine.dispose()
 
 
+# -- License detection --------------------------------------------------------
+
+_LICENSE_FILES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md",
+                  "LICENCE.txt", "COPYING", "COPYING.md")
+
+_LICENSE_PATTERNS: list[tuple[str, str]] = [
+    ("MIT License", "MIT"),
+    ("Apache License.*2\\.0", "Apache-2.0"),
+    ("GNU General Public License.*version 3", "GPL-3.0"),
+    ("GNU General Public License.*version 2", "GPL-2.0"),
+    ("GNU Lesser General Public License", "LGPL"),
+    ("BSD 3-Clause", "BSD-3-Clause"),
+    ("BSD 2-Clause", "BSD-2-Clause"),
+    ("Mozilla Public License.*2\\.0", "MPL-2.0"),
+    ("Business Source License", "BSL-1.1"),
+    ("ISC License", "ISC"),
+    ("The Unlicense", "Unlicense"),
+]
+
+
+def _detect_license(repo_dir: Path) -> str | None:
+    """Detect repository license by scanning LICENSE/COPYING files in the root.
+
+    Returns SPDX-like identifier (e.g. 'MIT', 'Apache-2.0') or None if no
+    license file found. Returns 'Other' if file exists but is unrecognised.
+    """
+    for name in _LICENSE_FILES:
+        path = repo_dir / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(errors="replace")[:3000]
+        except OSError:
+            continue
+        for pattern, spdx in _LICENSE_PATTERNS:
+            if re.search(pattern, text, re.IGNORECASE):
+                return spdx
+        return "Other"
+    return None
+
+
 # -- Single-version indexing --------------------------------------------------
 
 async def run_indexing(
@@ -97,6 +138,9 @@ async def run_indexing(
                                        finished_at=None, error=None)
             try:
                 repo_dir = _clone_or_pull(repo_url, branch, checkout_ref=checkout_ref)
+                repo_license = _detect_license(repo_dir)
+                if repo_license:
+                    log.info("license_detected", repo=repo_name, license=repo_license)
                 modules = parse_repository(repo_dir, repo_name,
                                            module_paths=module_filter)
 
@@ -141,7 +185,8 @@ async def run_indexing(
                                 db, module, cached["embedding_str"],
                                 cached["description"], commit_sha,
                                 job_id=str(job_id) if job_id else None,
-                                code_hash=code_hash)
+                                code_hash=code_hash,
+                                license=repo_license)
                             await graph_db.upsert_module(module, db=db)
                             stats["added"] += 1
                             reused += 1
@@ -179,7 +224,8 @@ async def run_indexing(
                                 embedding = embed_module(m, description)
                                 await vs_upsert(db, m, embedding, description, commit_sha,
                                                 job_id=str(job_id) if job_id else None,
-                                                code_hash=code_hash)
+                                                code_hash=code_hash,
+                                                license=repo_license)
                                 await graph_db.upsert_module(m, db=db)
                                 stats["added"] += 1
                             except Exception as e:
@@ -194,7 +240,8 @@ async def run_indexing(
                             embedding = embed_module(module, description)
                             await vs_upsert(db, module, embedding, description, commit_sha,
                                             job_id=str(job_id) if job_id else None,
-                                            code_hash=code_hash)
+                                            code_hash=code_hash,
+                                            license=repo_license)
                             await graph_db.upsert_module(module, db=db)
                             stats["added"] += 1
                         except Exception as e:
@@ -531,6 +578,7 @@ def clear_repo_cache(repo_url: str) -> None:
 async def _upsert_with_raw_embedding(
     db, module: ParsedModule, embedding_str: str, description: str,
     commit_sha: str | None, job_id: str | None, code_hash: str,
+    license: str | None = None,
 ):
     """Upsert using a pre-computed embedding string (from code_hash reuse)."""
     from sqlalchemy import text as sa_text
@@ -538,13 +586,14 @@ async def _upsert_with_raw_embedding(
         sa_text("""
             INSERT INTO modules
                 (repo, module_name, module_path, version, tags, variables, outputs,
-                 resources, description, raw_code, embedding, commit_sha, job_id, code_hash)
+                 resources, description, raw_code, embedding, commit_sha, job_id,
+                 code_hash, license)
             VALUES
                 (:repo, :module_name, :module_path, :version, :tags, CAST(:variables AS jsonb),
                  CAST(:outputs AS jsonb), :resources, :description, :raw_code,
                  CAST(:embedding AS vector), :commit_sha,
                  (SELECT id FROM index_jobs WHERE id = CAST(:job_id AS uuid)),
-                 :code_hash)
+                 :code_hash, :license)
             ON CONFLICT (repo, module_path, version)
             DO UPDATE SET
                 tags = EXCLUDED.tags, variables = EXCLUDED.variables,
@@ -552,7 +601,7 @@ async def _upsert_with_raw_embedding(
                 description = EXCLUDED.description, raw_code = EXCLUDED.raw_code,
                 embedding = EXCLUDED.embedding, commit_sha = EXCLUDED.commit_sha,
                 job_id = EXCLUDED.job_id, code_hash = EXCLUDED.code_hash,
-                indexed_at = now()
+                license = EXCLUDED.license, indexed_at = now()
         """),
         {
             "repo": module.repo, "module_name": module.module_name,
@@ -563,6 +612,7 @@ async def _upsert_with_raw_embedding(
             "resources": module.resources, "description": description,
             "raw_code": module.raw_code[:50_000], "embedding": embedding_str,
             "commit_sha": commit_sha, "job_id": job_id, "code_hash": code_hash,
+            "license": license,
         },
     )
     await db.commit()

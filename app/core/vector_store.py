@@ -41,19 +41,21 @@ async def upsert_module(
     commit_sha: str | None = None,
     job_id: str | None = None,
     code_hash: str | None = None,
+    license: str | None = None,
 ) -> UUID:
     """Insert or update a module. Returns the module UUID."""
     result = await db.execute(
         text("""
             INSERT INTO modules
                 (repo, module_name, module_path, version, tags, variables, outputs,
-                 resources, description, raw_code, embedding, commit_sha, job_id, code_hash)
+                 resources, description, raw_code, embedding, commit_sha, job_id,
+                 code_hash, license)
             VALUES
                 (:repo, :module_name, :module_path, :version, :tags, CAST(:variables AS jsonb),
                  CAST(:outputs AS jsonb), :resources, :description, :raw_code,
                  :embedding, :commit_sha,
                  (SELECT id FROM index_jobs WHERE id = CAST(:job_id AS uuid)),
-                 :code_hash)
+                 :code_hash, :license)
             ON CONFLICT (repo, module_path, version)
             DO UPDATE SET
                 tags        = EXCLUDED.tags,
@@ -66,6 +68,7 @@ async def upsert_module(
                 commit_sha  = EXCLUDED.commit_sha,
                 job_id      = EXCLUDED.job_id,
                 code_hash   = EXCLUDED.code_hash,
+                license     = EXCLUDED.license,
                 indexed_at  = now()
             RETURNING id
         """),
@@ -84,6 +87,7 @@ async def upsert_module(
             "commit_sha": commit_sha,
             "job_id": job_id,
             "code_hash": code_hash,
+            "license": license,
         },
     )
     await db.commit()

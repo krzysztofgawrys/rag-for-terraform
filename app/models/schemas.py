@@ -15,6 +15,7 @@ class ModuleBase(BaseModel):
     outputs: dict = {}
     resources: list[str] = []
     description: Optional[str] = None
+    license: Optional[str] = None
 
 
 class ModuleCreate(ModuleBase):

@@ -4,6 +4,17 @@ import type { Module } from '../types';
 
 let allModules: Module[] = [];
 let selectedModule: Module | null = null;
+
+/** Categorise license for CSS class: permissive, copyleft, bsl, unknown. */
+function licenseCat(license: string | undefined): string {
+  if (!license) return 'unknown';
+  const l = license.toLowerCase();
+  if (['mit', 'apache-2.0', 'bsd-2-clause', 'bsd-3-clause', 'isc', 'unlicense'].includes(l)) return 'permissive';
+  if (l.startsWith('gpl') || l.startsWith('lgpl') || l === 'mpl-2.0') return 'copyleft';
+  if (l.startsWith('bsl')) return 'bsl';
+  if (l === 'other') return 'other';
+  return 'unknown';
+}
 let sessionDepth = 1;
 let fullModuleCache: Module[] | null = null;
 
@@ -123,7 +134,10 @@ function renderModuleList(modules: Module[]): void {
       <div class="module-item-name">
         ${esc(m.module_name)}
       </div>
-      <div class="module-item-repo">${esc(m.repo)}</div>
+      <div class="module-item-repo">
+        ${esc(m.repo)}
+        <span class="license-badge license-${licenseCat(m.license)}">${esc(m.license || 'Unknown')}</span>
+      </div>
       <div class="module-item-tags">
         ${(m.tags || [])
           .slice(0, 4)
@@ -328,6 +342,7 @@ async function renderInfoTab(m: Module): Promise<void> {
       ${esc(m.module_name)}
       <span class="repo-badge">${esc(m.repo)}</span>
       <span class="tag" style="color:var(--purple);border-color:var(--purple)">${esc(m.version || '')}</span>
+      <span class="license-badge license-${licenseCat(m.license)}">${esc(m.license || 'Unknown')}</span>
     </div>
     ${m.description ? `<p style="color:var(--text2);font-size:13px;line-height:1.7;font-family:var(--font-sans)">${esc(m.description)}</p>` : ''}
     ${versionsHtml}

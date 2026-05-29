@@ -49,7 +49,8 @@ async def list_modules(
             text(f"""
                 SELECT DISTINCT ON (repo, module_path)
                        id, repo, module_name, module_path, version, tags,
-                       variables, outputs, resources, description, indexed_at, commit_sha
+                       variables, outputs, resources, description, indexed_at,
+                       commit_sha, license
                 FROM modules
                 WHERE {where}
                 ORDER BY repo, module_path, indexed_at DESC
@@ -61,7 +62,8 @@ async def list_modules(
         result = await db.execute(
             text(f"""
                 SELECT id, repo, module_name, module_path, version, tags,
-                       variables, outputs, resources, description, indexed_at, commit_sha
+                       variables, outputs, resources, description, indexed_at,
+                       commit_sha, license
                 FROM modules
                 WHERE {where}
                 ORDER BY module_name ASC

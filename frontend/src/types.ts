@@ -11,6 +11,7 @@ export interface Module {
   outputs?: Record<string, { description?: string }>;
   indexed_at?: string;
   commit_sha?: string;
+  license?: string;
 }
 
 export interface Source {
