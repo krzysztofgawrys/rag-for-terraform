@@ -361,9 +361,10 @@ class AuthMiddleware:
                             and row["role"] in self.allowed_roles
                             and (not row["expires_at"]
                                  or row["expires_at"] >= datetime.now(timezone.utc))):
-                        # Bind user context for audit logging
+                        # Bind user context for audit logging and role gating
                         structlog.contextvars.bind_contextvars(
                             user_email=row["email"],
+                            user_role=row["role"],
                         )
                         return await self.app(scope, receive, send)
             finally:
@@ -394,6 +395,7 @@ class AuthMiddleware:
                 if role in self.allowed_roles:
                     structlog.contextvars.bind_contextvars(
                         user_email=claims.get("email", ""),
+                        user_role=role,
                     )
                     return await self.app(scope, receive, send)
             except Exception:

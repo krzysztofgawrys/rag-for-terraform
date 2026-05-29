@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     # Webhooks (HMAC secret per provider)
     github_webhook_secret: str = ""
     gitlab_webhook_token: str = ""
+    # Comma-separated allowed git hostnames for webhook-triggered clones.
+    # Empty = only allow repos already in index_jobs (re-index only).
+    webhook_allowed_hosts: str = "github.com,gitlab.com"
 
     class Config:
         env_file = ".env"

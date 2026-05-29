@@ -43,9 +43,10 @@ async def github_webhook(
     commit_sha: str = payload.get("after", "")
     repo_data: dict = payload.get("repository", {})
 
-    # Get SSH or HTTPS URL
+    # Get SSH or HTTPS URL and validate against allowlist
     repo_url = repo_data.get("ssh_url") or repo_data.get("clone_url", "")
     repo_name = repo_data.get("full_name", repo_url)
+    _validate_clone_url(repo_url)
 
     # Tag push → index specific version
     if ref.startswith("refs/tags/"):
@@ -96,6 +97,7 @@ async def gitlab_webhook(
     commit_sha: str = payload.get("after", "")
     project: dict = payload.get("project", {})
     repo_url = project.get("ssh_url_to_repo") or project.get("http_url_to_repo", "")
+    _validate_clone_url(repo_url)
 
     if branch not in WATCHED_BRANCHES:
         return {"status": "ignored", "reason": f"branch={branch}"}
@@ -106,6 +108,24 @@ async def gitlab_webhook(
 
 
 # -- Helpers -------------------------------------------------------------------
+
+def _validate_clone_url(repo_url: str) -> None:
+    """Reject clone URLs whose hostname is not in the allowlist."""
+    import re
+    allowed = {h.strip().lower() for h in settings.webhook_allowed_hosts.split(",") if h.strip()}
+    if not allowed:
+        return
+    # Extract hostname from SSH (git@host:...) or HTTPS (https://host/...)
+    m = re.match(r"(?:git@|ssh://(?:[^@]+@)?)([^:/]+)", repo_url)
+    if not m:
+        m = re.match(r"https?://([^/]+)", repo_url)
+    hostname = m.group(1).lower() if m else ""
+    if hostname not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Clone host '{hostname}' not in WEBHOOK_ALLOWED_HOSTS",
+        )
+
 
 async def _enqueue_job(repo_url: str, branch: str,
                        commit_sha: str, triggered_by: str) -> str:

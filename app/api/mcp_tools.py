@@ -19,6 +19,18 @@ from app.core import graph as graph_db
 
 log = structlog.get_logger("mcp_tools")
 
+
+def _require_write_role() -> str | None:
+    """Return an error message if the caller is readonly, else None."""
+    ctx = structlog.contextvars.get_contextvars()
+    role = ctx.get("user_role")
+    if role == "readonly":
+        return (
+            "**This tool requires a 'user' or 'admin' role.** "
+            "Your API key has 'readonly' access."
+        )
+    return None
+
 _MCP_INSTRUCTIONS = (
     "Terraform module knowledge base for this organisation. "
     "\n\n"
@@ -156,6 +168,9 @@ async def query_modules(
             "Run your own instance for full access: "
             "https://github.com/krzysztofgawrys/rag-for-terraform"
         )
+    role_err = _require_write_role()
+    if role_err:
+        return role_err
 
     from app.core.embeddings import embed_query as _embed
     from app.core.vector_store import get_snippets_for_module
@@ -315,6 +330,9 @@ async def pick_modules(query: str, top_k: int = 8) -> str:
             "Run your own instance for full access: "
             "https://github.com/krzysztofgawrys/rag-for-terraform"
         )
+    role_err = _require_write_role()
+    if role_err:
+        return role_err
 
     from app.core.embeddings import embed_query as _embed
     from app.services.retriever import (
