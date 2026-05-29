@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     # SSO mode (ALB OIDC)
     sso_admin_groups: str = "terraform-rag-admins"   # comma-separated
     sso_user_groups: str = "terraform-rag-users"
-    sso_default_role: str = "user"                   # role when no groups match ("user", "readonly", "admin")
+    sso_default_role: str = "readonly"                 # role when no groups match ("user", "readonly", "admin")
     sso_region: str = "eu-west-1"
     # Local mode - seed admin on first startup
     admin_initial_email: str = ""

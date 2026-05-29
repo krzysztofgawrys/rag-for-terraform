@@ -160,6 +160,14 @@ class CognitoOAuthProvider(OAuthAuthorizationServerProvider[
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams,
     ) -> str:
+        # Validate redirect_uri against the client's registered URIs
+        requested_uri = str(params.redirect_uri)
+        registered_uris = [str(u) for u in (client.redirect_uris or [])]
+        if registered_uris and requested_uri not in registered_uris:
+            raise ValueError(
+                f"redirect_uri '{requested_uri}' not in client's registered URIs"
+            )
+
         state = secrets.token_urlsafe(32)
 
         # Store the MCP client's PKCE + redirect_uri so the callback can find it

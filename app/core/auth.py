@@ -460,6 +460,43 @@ async def seed_initial_admin() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Seed demo user (runs once on startup when DEMO_MODE is set)
+# ---------------------------------------------------------------------------
+
+async def seed_demo_user() -> None:
+    """Create the demo readonly user when DEMO_MODE=true."""
+    settings = get_settings()
+    if not settings.demo_mode:
+        return
+    if settings.auth_mode != "local":
+        return
+
+    import bcrypt
+    from app.core.vector_store import make_session_factory
+    engine, SessionLocal = make_session_factory()
+    try:
+        async with SessionLocal() as db:
+            existing = await db.execute(
+                sa_text("SELECT id FROM users WHERE email = :email"),
+                {"email": "demo@terraform-rag.io"},
+            )
+            if existing.first():
+                return
+            pw_hash = bcrypt.hashpw(b"demo", bcrypt.gensalt(rounds=12)).decode()
+            await db.execute(
+                sa_text("""
+                    INSERT INTO users (email, display_name, password_hash, role)
+                    VALUES ('demo@terraform-rag.io', 'Demo User', :pw, 'readonly')
+                """),
+                {"pw": pw_hash},
+            )
+            await db.commit()
+            log.info("seed_demo_user_created")
+    finally:
+        await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
 # Seed MCP API key (runs once on startup when MCP_SEED_API_KEY is set)
 # ---------------------------------------------------------------------------
 
