@@ -210,7 +210,12 @@ async def get_current_user(
                 access_token = request.headers.get("x-amzn-oidc-accesstoken", "")
                 if access_token:
                     try:
-                        access_claims = jwt.decode(access_token, options={"verify_signature": False})
+                        access_claims = jwt.decode(
+                            access_token,
+                            options={"verify_signature": False, "verify_iss": True, "verify_exp": True},
+                            issuer=f"https://cognito-idp.{settings.sso_region}.amazonaws.com/{settings.cognito_user_pool_id}" if settings.cognito_user_pool_id else None,
+                            algorithms=["RS256"],
+                        )
                         groups = _extract_groups(access_claims)
                     except Exception:
                         log.warning("sso_access_token_decode_failed", exc_info=True)
@@ -376,7 +381,12 @@ class AuthMiddleware:
                     access_token = headers.get(b"x-amzn-oidc-accesstoken", b"").decode()
                     if access_token:
                         try:
-                            access_claims = jwt.decode(access_token, options={"verify_signature": False})
+                            access_claims = jwt.decode(
+                                access_token,
+                                options={"verify_signature": False, "verify_iss": True, "verify_exp": True},
+                                issuer=f"https://cognito-idp.{settings.sso_region}.amazonaws.com/{settings.cognito_user_pool_id}" if settings.cognito_user_pool_id else None,
+                                algorithms=["RS256"],
+                            )
                             groups = _extract_groups(access_claims)
                         except Exception:
                             pass
@@ -426,6 +436,8 @@ async def _send_401(send: Any) -> None:
 
 async def seed_initial_admin() -> None:
     """Create the initial admin user if configured and not already present."""
+    import os
+
     settings = get_settings()
     if settings.auth_mode != "local":
         return
@@ -457,6 +469,8 @@ async def seed_initial_admin() -> None:
             log.info("seed_admin_created", email=settings.admin_initial_email)
     finally:
         await engine.dispose()
+        # Clear plaintext password from environment after seeding
+        os.environ.pop("ADMIN_INITIAL_PASSWORD", None)
 
 
 # ---------------------------------------------------------------------------

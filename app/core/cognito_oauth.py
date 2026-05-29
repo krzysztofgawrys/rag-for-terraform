@@ -523,12 +523,14 @@ class CognitoOAuthProvider(OAuthAuthorizationServerProvider[
         groups = _extract_groups(id_claims)
         if not groups and "access_token" in cognito_tokens:
             try:
-                access_claims = pyjwt.decode(
-                    cognito_tokens["access_token"], options={"verify_signature": False},
+                jwks = await _get_cognito_jwks(self._region, self._pool_id)
+                access_claims = _decode_cognito_id_token(
+                    cognito_tokens["access_token"],
+                    self._region, self._pool_id, jwks,
                 )
                 groups = _extract_groups(access_claims)
             except Exception:
-                pass
+                log.warning("cognito_access_token_verify_failed", exc_info=True)
 
         role = _resolve_sso_role(groups)
 

@@ -87,10 +87,12 @@ def _create_mcp() -> FastMCP:
         name="terraform-rag",
         stateless_http=True,
         instructions=_MCP_INSTRUCTIONS,
-        # No ALB - disable DNS rebinding protection (default host=127.0.0.1
-        # would auto-enable it, blocking non-localhost requests)
         transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=False,
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "127.0.0.1", "127.0.0.1:8000",
+                "localhost", "localhost:8000",
+            ],
         ),
     )
 

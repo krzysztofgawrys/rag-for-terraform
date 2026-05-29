@@ -15,7 +15,7 @@ import yaml
 
 from app.core.vector_store import get_db
 from app.core.embeddings import embed_query
-from app.core.auth import AuthenticatedUser, require_user, require_reader
+from app.core.auth import AuthenticatedUser, require_admin, require_user, require_reader
 from app.services.retriever import query as run_query, stream_query as run_stream_query
 from app.core import graph as graph_db
 from app.core import vector_store as vs
@@ -149,7 +149,7 @@ EVAL_FIXTURE_PATH = Path(__file__).resolve().parents[3] / "scripts" / "eval_quer
 
 @router.post("/eval")
 async def eval_retrieval(
-    user: AuthenticatedUser = require_user,
+    user: AuthenticatedUser = require_admin,
     db: AsyncSession = Depends(get_db),
 ):
     """Run retrieval evaluation against the YAML fixture.
