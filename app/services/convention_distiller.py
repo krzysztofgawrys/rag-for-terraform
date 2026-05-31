@@ -264,7 +264,7 @@ async def run_distillation(
     engine, SessionLocal = make_session_factory()
     distill_stats = {
         "modules": 0, "dimensions": 0, "skipped": 0,
-        "stale_marked": 0, "kept_existing": 0,
+        "stale_marked": 0, "kept_existing": 0, "llm_failed": 0,
     }
 
     try:
@@ -324,6 +324,29 @@ async def _distill_one_module(
 
     log.info("distilling_module", module_ref=module_ref, usages=len(usages))
     results = await distill_all_dimensions(module_ref, usages)
+
+    # Detect LLM failures: distill_dimension returns None on empty/throttled
+    # response, then distill_all_dimensions filters those out. The diff between
+    # attempted (= |DIMENSIONS|) and returned len reveals dimensions that the
+    # LLM dropped (rate limiting, daily token cap, transient API errors). Without
+    # tracking this we silently report `modules: N, dimensions: 0` and conventions
+    # appear "processed" while nothing was actually written.
+    attempted = len(DIMENSIONS)
+    returned = len(results)
+    llm_dropped = attempted - returned
+    if llm_dropped:
+        distill_stats["llm_failed"] += llm_dropped
+        log.warning("distill_llm_dropped_dimensions",
+                    module_ref=module_ref,
+                    dropped=llm_dropped, attempted=attempted)
+
+    if returned == 0:
+        # Every dimension failed at LLM level - do NOT count this as a processed
+        # module, otherwise stats falsely show modules > 0 with dimensions = 0.
+        log.warning("distill_module_total_llm_failure",
+                    module_ref=module_ref, attempted=attempted)
+        distill_stats["skipped"] += 1
+        return
 
     for r in results:
         if not r or r["assessment"] == "INSUFFICIENT_DATA":

@@ -142,7 +142,7 @@ export interface ConsumerJob {
     resolved?: number;
     embedded?: number;
     affected_modules?: string[];
-    distillation?: { modules?: number; dimensions?: number; skipped?: number; stale_marked?: number; kept_existing?: number };
+    distillation?: { modules?: number; dimensions?: number; skipped?: number; stale_marked?: number; kept_existing?: number; llm_failed?: number };
   };
   started_at?: string;
   finished_at?: string;

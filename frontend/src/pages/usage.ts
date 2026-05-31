@@ -67,6 +67,7 @@ export async function loadConsumerJobs(silent = false): Promise<void> {
             ? `<span style="color:var(--purple)">${d.modules ?? 0}</span> mod / <span style="color:var(--orange)">${d.dimensions ?? 0}</span> dim`
               + (d.stale_marked ? ` / <span style="color:var(--red)" title="Conventions marked stale (failed quality gate)">${d.stale_marked} stale</span>` : '')
               + (d.kept_existing ? ` / <span style="color:var(--text3)" title="Kept existing higher-quality convention">${d.kept_existing} kept</span>` : '')
+              + (d.llm_failed ? ` / <span style="color:var(--red)" title="Dimensions where LLM call failed (rate limit, throttling, daily token cap). Re-run distillation when quota resets.">${d.llm_failed} llm-fail</span>` : '')
             : '\u2014';
 
           return `
