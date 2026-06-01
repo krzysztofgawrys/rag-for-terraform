@@ -567,3 +567,50 @@ async def seed_mcp_api_key() -> None:
             log.info("seed_mcp_api_key_created", key_prefix=key_prefix)
     finally:
         await engine.dispose()
+
+
+async def seed_ci_api_key() -> None:
+    """Insert the pre-generated CI/CD API key (admin role) if not already present.
+
+    The key comes from ``CI_SEED_API_KEY`` env var (set via Secrets Manager
+    on AWS).  Used by GitHub Actions workflows to trigger reindexing via
+    ``POST /index/`` which requires admin role.
+    """
+    settings = get_settings()
+    raw_key = settings.ci_seed_api_key
+    if not raw_key or not raw_key.startswith("trag_"):
+        return
+
+    key_hash = hash_api_key(raw_key)
+
+    from app.core.vector_store import make_session_factory
+    engine, SessionLocal = make_session_factory()
+    try:
+        async with SessionLocal() as db:
+            existing = await db.execute(
+                sa_text("SELECT id FROM api_keys WHERE key_hash = :hash"),
+                {"hash": key_hash},
+            )
+            if existing.first():
+                return
+
+            admin = await db.execute(
+                sa_text("SELECT id FROM users WHERE role = 'admin' ORDER BY first_seen LIMIT 1"),
+            )
+            admin_row = admin.first()
+            if not admin_row:
+                log.warning("seed_ci_api_key_skipped", reason="no admin user exists yet")
+                return
+
+            key_prefix = raw_key[:13]  # "trag_" + first 8 hex chars
+            await db.execute(
+                sa_text("""
+                    INSERT INTO api_keys (user_id, name, key_hash, key_prefix, role)
+                    VALUES (:uid, 'ci-seed', :hash, :prefix, 'admin')
+                """),
+                {"uid": admin_row[0], "hash": key_hash, "prefix": key_prefix},
+            )
+            await db.commit()
+            log.info("seed_ci_api_key_created", key_prefix=key_prefix)
+    finally:
+        await engine.dispose()

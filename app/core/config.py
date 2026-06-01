@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "Terraform RAG Backend"
     debug: bool = False
     mcp_seed_api_key: str = ""  # pre-generated trag_* key seeded on startup
+    ci_seed_api_key: str = ""   # pre-generated trag_* key for CI/CD (admin role)
 
     # PostgreSQL
     postgres_user: str = "terraform_rag"

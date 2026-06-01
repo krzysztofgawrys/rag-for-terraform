@@ -11,7 +11,7 @@ from app.core.migrations import run_migrations
 from app.api.routes import webhook, index, query, modules, consumer, snippets, audit
 from app.api.routes import auth as auth_routes
 from app.api import mcp_tools
-from app.core.auth import AuthMiddleware, seed_initial_admin, seed_demo_user, seed_mcp_api_key
+from app.core.auth import AuthMiddleware, seed_initial_admin, seed_demo_user, seed_mcp_api_key, seed_ci_api_key
 
 settings = get_settings()
 
@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
     await seed_initial_admin()
     await seed_demo_user()
     await seed_mcp_api_key()
+    await seed_ci_api_key()
     async with mcp_http_app.router.lifespan_context(mcp_http_app):
         yield
     await graph_db.close_driver()
