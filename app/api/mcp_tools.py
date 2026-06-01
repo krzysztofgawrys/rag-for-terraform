@@ -84,7 +84,7 @@ def _create_mcp() -> FastMCP:
                 issuer_url=settings.mcp_oauth_issuer_url,
                 resource_server_url=f"{settings.mcp_oauth_issuer_url}/mcp",
                 client_registration_options=ClientRegistrationOptions(
-                    enabled=False,
+                    enabled=True,
                     valid_scopes=["openid", "email", "profile"],
                     default_scopes=["openid", "email", "profile"],
                 ),

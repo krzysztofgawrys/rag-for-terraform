@@ -20,7 +20,7 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.RAG_API_KEY }}" \
             -d '{
-              "repo_url": "${{ github.server_url }}/${{ github.repository }}.git",
+              "repo_url": "git@github.com:${{ github.repository }}.git",
               "branch": "${{ github.ref_name }}",
               "commit_sha": "${{ github.sha }}",
               "triggered_by": "github_actions"
