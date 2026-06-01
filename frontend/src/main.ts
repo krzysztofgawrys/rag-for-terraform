@@ -142,9 +142,17 @@ async function init(): Promise<void> {
     if (pageId === 'auditlogs') loadAuditLogs();
   });
 
-  if (authMode === 'disabled' && !apiReachable) {
-    // API unreachable — show landing page
-    navigateTo('login');
+  if (!apiReachable) {
+    // Detect SSO even when API is down: ALB OIDC sets AWSELBAuthSessionCookie
+    const behindAlb = document.cookie.split(';').some(c =>
+      c.trim().startsWith('AWSELBAuthSessionCookie'));
+    if (behindAlb) {
+      // SSO user — show app shell with API error, never the landing page
+      navigateTo('modules');
+    } else {
+      // Non-SSO — show landing page
+      navigateTo('login');
+    }
   } else if (authMode === 'disabled') {
     // No auth — go straight to app
     await loadStats();

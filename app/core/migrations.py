@@ -72,7 +72,17 @@ async def run_migrations(database_url: str | None = None) -> int:
                 sql = f.read_text(encoding="utf-8").strip()
                 # Template variable substitution for migrations that need config values
                 sql = sql.replace("{{EMBEDDING_DIM}}", str(settings.embedding_dim))
-                if not sql:
+                # Skip empty migrations and comment-only migrations
+                sql_no_comments = "\n".join(
+                    line for line in sql.splitlines()
+                    if line.strip() and not line.strip().startswith("--")
+                )
+                if not sql_no_comments.strip():
+                    log.info("migration_skip_empty", version=version, file=f.name)
+                    await conn.execute(
+                        text("INSERT INTO schema_migrations (version, name) VALUES (:v, :n)"),
+                        {"v": version, "n": f.stem},
+                    )
                     continue
 
                 log.info("migration_applying", version=version, file=f.name)
