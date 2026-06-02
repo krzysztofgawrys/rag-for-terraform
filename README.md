@@ -28,7 +28,7 @@
 
 ## Try the live demo
 
-**Web UI** - browse 704 modules across 57 repos:
+**Web UI** - browse 2500+ modules across 150+ repos (AWS / Azure / GCP):
 
 > https://terraform-rag.io
 >
