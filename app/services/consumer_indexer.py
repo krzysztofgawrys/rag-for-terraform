@@ -13,12 +13,14 @@ Pipeline:
 """
 
 import json
+import re
 import shutil
 import structlog
 from datetime import datetime, timezone
 from pathlib import Path
 
 import git
+import httpx
 
 from app.core.config import get_settings
 from app.core.embeddings import embed_query
@@ -30,6 +32,12 @@ from app.core.embeddings import embed_query as _embed_query
 
 log = structlog.get_logger()
 settings = get_settings()
+
+# Cache for Terraform Registry API results: "namespace/name/provider" -> repo_name
+_REGISTRY_CACHE: dict[str, str] = {}
+# Matches registry format: namespace/name/provider[//subpath]
+# Namespace must not contain dots (rules out github.com/org/repo style)
+_REGISTRY_RE = re.compile(r"^([^./][^/]*)/([^/]+)/([^/]+?)(?://(.*))?$")
 
 
 async def run_consumer_indexing(
@@ -105,7 +113,14 @@ async def _index_consumer(
     if not usages:
         return {"parsed": 0, "resolved": 0, "embedded": 0, "affected_modules": []}
 
-    # 3. Resolve module_refs — check which ones exist in our modules table
+    # 3. Resolve module_refs — check which ones exist in our modules table.
+    # First pass with heuristic results; then enhance unresolved registry-format
+    # sources via Terraform Registry API (corrects cases where heuristic name
+    # differs from actual GitHub repo name).
+    _quick_known = await _resolve_known_modules(db, usages)
+    _unresolved = [u for u in usages if u.module_ref and u.module_ref not in _quick_known]
+    if _unresolved:
+        await _enhance_via_registry_api(_unresolved)
     known_refs = await _resolve_known_modules(db, usages)
     resolved_usages = [u for u in usages if u.module_ref in known_refs]
     log.info("consumer_resolved", repo=repo_name,
@@ -373,6 +388,70 @@ async def recompute_stack_patterns(db) -> int:
             )
         except Exception:
             pass  # lock released automatically on connection close
+
+
+async def _enhance_via_registry_api(usages: list) -> list:
+    """For usages with registry-format sources not resolved by heuristic,
+    call the Terraform Registry API to get the real GitHub repo name.
+
+    Updates usage.module_ref in-place. Returns the subset of usages that
+    were corrected. Results are cached per process to avoid repeated calls.
+    """
+    enhanced = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+        for usage in usages:
+            source = usage.source_url
+            if not source:
+                continue
+            # Skip relative paths and git/SSH URLs
+            if source.startswith(("./", "../", "git", "ssh")):
+                continue
+            if ":" in source:
+                continue
+
+            m = _REGISTRY_RE.match(source)
+            if not m:
+                continue
+            namespace = m.group(1)
+            if "." in namespace:  # github.com/org/repo style - not registry
+                continue
+
+            name = m.group(2)
+            provider = m.group(3)
+            subpath = m.group(4) or ""
+            cache_key = f"{namespace}/{name}/{provider}"
+
+            if cache_key not in _REGISTRY_CACHE:
+                try:
+                    resp = await client.get(
+                        f"https://registry.terraform.io/v1/modules/{cache_key}"
+                    )
+                    if resp.status_code == 200:
+                        github_source = resp.json().get("source", "")
+                        # github_source is like "github.com/claranet/terraform-azurerm-aks"
+                        repo_name = github_source.rstrip("/").split("/")[-1] if github_source else ""
+                        _REGISTRY_CACHE[cache_key] = repo_name
+                        log.debug("registry_api_resolved", source=cache_key, repo=repo_name)
+                    else:
+                        _REGISTRY_CACHE[cache_key] = ""
+                except Exception as exc:
+                    log.debug("registry_api_failed", source=cache_key, error=str(exc))
+                    _REGISTRY_CACHE[cache_key] = ""
+
+            repo_name = _REGISTRY_CACHE.get(cache_key, "")
+            if not repo_name:
+                continue
+
+            new_ref = f"{repo_name}/{subpath}" if subpath else repo_name
+            if new_ref != usage.module_ref:
+                log.debug("registry_ref_corrected",
+                          old=usage.module_ref, new=new_ref, source=source)
+                usage.module_ref = new_ref
+                enhanced.append(usage)
+
+    if enhanced:
+        log.info("registry_refs_enhanced", count=len(enhanced))
+    return enhanced
 
 
 async def _resolve_known_modules(db, usages) -> set[str]:
