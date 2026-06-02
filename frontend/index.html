@@ -9,7 +9,7 @@
 </head>
 <body>
 
-<header>
+<header id="appHeader" style="display:none">
   <div class="logo">
     <span class="logo-icon">&#x2B21;</span>
     Terraform<span>RAG</span>
@@ -33,7 +33,7 @@
   </nav>
 </header>
 
-<main>
+<main id="appMain" style="display:none">
 
 <!-- Stats bar -->
 <div class="stats-bar" id="statsBar">
@@ -324,9 +324,16 @@
   </div>
 </div>
 
+</main>
+
 <!-- LANDING / LOGIN PAGE -->
 <div class="page" id="page-login">
   <div class="landing">
+
+    <!-- Theme toggle for landing page -->
+    <button class="theme-toggle landing-theme-toggle" id="landingThemeToggle" title="Toggle light/dark mode">
+      <span class="theme-icon" id="landingThemeIcon">&#x263E;</span>
+    </button>
 
     <!-- Main content -->
     <div class="landing-content">
@@ -339,6 +346,19 @@
           AI-powered knowledge base for your Terraform modules.<br>
           Index, search, compose, and audit - all from one place.
         </p>
+      </section>
+
+      <!-- Live stats -->
+      <section class="landing-stats" id="landing-stats">
+        <div class="landing-stats-grid">
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-modules" style="color:var(--green)">-</span><span class="landing-stat-label">Modules</span></div>
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-repos" style="color:var(--cyan)">-</span><span class="landing-stat-label">Repos</span></div>
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-tags" style="color:var(--orange)">-</span><span class="landing-stat-label">Tags</span></div>
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-resources" style="color:var(--cyan)">-</span><span class="landing-stat-label">Resource Types</span></div>
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-versions" style="color:var(--purple)">-</span><span class="landing-stat-label">Versions</span></div>
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-conventions" style="color:var(--purple)">-</span><span class="landing-stat-label">Conventions</span></div>
+          <div class="landing-stat"><span class="landing-stat-num" id="ls-usages" style="color:var(--blue)">-</span><span class="landing-stat-label">Usages</span></div>
+        </div>
       </section>
 
       <!-- Features -->
@@ -468,8 +488,6 @@
   </div>
 </div>
 
-</main>
-
 <footer class="site-footer" id="siteFooter">
   <p>&copy; 2025-2026 Krzysztof Gawrys. All rights reserved.
     &nbsp;&middot;&nbsp;
@@ -521,6 +539,22 @@
     if (e.key === 'ArrowLeft') show(idx - 1);
     if (e.key === 'ArrowRight') show(idx + 1);
   });
+})();
+
+// Fetch live stats for landing page
+(function() {
+  fetch('/public/stats').then(function(r) { return r.json(); }).then(function(d) {
+    var m = function(id, v) { var el = document.getElementById(id); if (el && v != null) el.textContent = Number(v).toLocaleString(); };
+    m('ls-modules', d.total_modules);
+    m('ls-repos', d.total_repos);
+    m('ls-tags', d.unique_tags);
+    m('ls-resources', d.unique_resource_types);
+    m('ls-versions', d.total_versions);
+    m('ls-conventions', d.total_conventions);
+    m('ls-usages', d.total_usages);
+    var sec = document.getElementById('landing-stats');
+    if (sec) sec.classList.add('loaded');
+  }).catch(function() {});
 })();
 </script>
 </body>

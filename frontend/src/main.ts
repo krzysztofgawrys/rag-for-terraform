@@ -31,16 +31,28 @@ function initTheme(): void {
   const saved = localStorage.getItem('theme');
   const theme = saved === 'light' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', theme);
-  const icon = document.getElementById('themeIcon')!;
-  icon.innerHTML = theme === 'light' ? '&#x2600;' : '&#x263E;';
 
-  document.getElementById('themeToggle')!.addEventListener('click', () => {
+  const icons = [
+    document.getElementById('themeIcon'),
+    document.getElementById('landingThemeIcon'),
+  ].filter(Boolean) as HTMLElement[];
+
+  const updateIcons = (t: string) => {
+    const html = t === 'dark' ? '&#x2600;' : '&#x263E;';
+    icons.forEach((i) => (i.innerHTML = html));
+  };
+  updateIcons(theme);
+
+  const toggle = () => {
     const current = document.documentElement.getAttribute('data-theme');
     const next = current === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
-    icon.innerHTML = next === 'light' ? '&#x2600;' : '&#x263E;';
-  });
+    updateIcons(next);
+  };
+
+  document.getElementById('themeToggle')?.addEventListener('click', toggle);
+  document.getElementById('landingThemeToggle')?.addEventListener('click', toggle);
 }
 
 async function loadUserInfo(): Promise<void> {
@@ -87,8 +99,18 @@ function setupLogout(): void {
   });
 }
 
+function showAppShell(visible: boolean): void {
+  const d = visible ? '' : 'none';
+  const hdr = document.getElementById('appHeader');
+  const main = document.getElementById('appMain');
+  if (hdr) hdr.style.display = d;
+  if (main) main.style.display = d;
+}
+
 async function enterApp(): Promise<void> {
-  // Show nav, load data
+  // Hide landing page immediately so it doesn't flash below the app shell
+  document.getElementById('page-login')?.classList.remove('active');
+  showAppShell(true);
   await loadUserInfo();
   await loadStats();
   await initModulesPage();
@@ -155,6 +177,7 @@ async function init(): Promise<void> {
     }
   } else if (authMode === 'disabled') {
     // No auth — go straight to app
+    showAppShell(true);
     await loadStats();
     await initModulesPage();
   } else if (authMode === 'sso') {

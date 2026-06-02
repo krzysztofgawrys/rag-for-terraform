@@ -133,6 +133,56 @@ async def health():
     return {"status": "ok", "version": "1.0.0"}
 
 
+# -- Public stats (no auth, cached) -------------------------------------------
+
+_stats_cache: dict = {"data": None, "ts": 0}
+_STATS_TTL = 120  # seconds
+
+
+@app.get("/public/stats")
+async def public_stats():
+    """Public stats for the landing page. Cached for 2 minutes."""
+    import time
+    from sqlalchemy import text
+    from app.core.vector_store import AsyncSessionLocal
+
+    now = time.time()
+    if _stats_cache["data"] and (now - _stats_cache["ts"]) < _STATS_TTL:
+        return _stats_cache["data"]
+
+    async with AsyncSessionLocal() as db:
+        row = dict((await db.execute(text("""
+            SELECT
+                COUNT(DISTINCT (repo, module_path)) AS total_modules,
+                COUNT(DISTINCT repo) AS total_repos
+            FROM modules
+        """))).mappings().first())
+
+        row["unique_tags"] = (await db.execute(text(
+            "SELECT COUNT(DISTINCT tag) FROM modules, UNNEST(tags) AS tag"
+        ))).scalar() or 0
+
+        row["unique_resource_types"] = (await db.execute(text(
+            "SELECT COUNT(DISTINCT rt) FROM modules, UNNEST(resources) AS rt"
+        ))).scalar() or 0
+
+        row["total_versions"] = (await db.execute(text(
+            "SELECT COUNT(DISTINCT version) FROM modules"
+        ))).scalar() or 0
+
+        snippet = dict((await db.execute(text("""
+            SELECT
+                COUNT(*) FILTER (WHERE kind LIKE 'convention.%%') AS total_conventions,
+                COUNT(*) FILTER (WHERE kind = 'usage') AS total_usages
+            FROM knowledge_snippets
+        """))).mappings().first())
+
+    data = {**row, **snippet}
+    _stats_cache["data"] = data
+    _stats_cache["ts"] = now
+    return data
+
+
 # MCP mount: when Cognito OAuth is active, FastMCP handles auth natively
 # via BearerAuthBackend + RequireAuthMiddleware. Otherwise fall back to
 # our custom AuthMiddleware for API key + ALB SSO validation.
