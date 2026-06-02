@@ -28,7 +28,7 @@
 
 ## Try the live demo
 
-**Web UI** - browse 704 modules across 57 repos:
+**Web UI** - browse 2500+ modules across 150+ repos (AWS / Azure / GCP):
 
 > https://terraform-rag.io
 >
@@ -76,7 +76,7 @@ Query from the web UI, the REST API, or directly from your IDE via MCP.
       <a href="https://terraform-rag.io">
         <img src="docs/screenshots/01-modules.png" width="400" alt="Module browser">
       </a>
-      <br><sub><b>Module Browser</b> - 704 modules across 57 repos</sub>
+      <br><sub><b>Module Browser</b> - 2500+ modules across 150+ repos</sub>
     </td>
     <td align="center">
       <a href="https://terraform-rag.io">
