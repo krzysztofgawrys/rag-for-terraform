@@ -30,14 +30,17 @@ async def trigger_indexing(
         repo_url=payload.repo_url,
     )
 
-    index_repository_task.delay(
-        repo_url=payload.repo_url,
-        branch=payload.branch,
-        commit_sha=payload.commit_sha,
-        job_id=str(job_id),
-        version=payload.branch,
-        discover_tags=payload.discover_tags,
-        force=payload.force,
+    index_repository_task.apply_async(
+        kwargs=dict(
+            repo_url=payload.repo_url,
+            branch=payload.branch,
+            commit_sha=payload.commit_sha,
+            job_id=str(job_id),
+            version=payload.branch,
+            discover_tags=payload.discover_tags,
+            force=payload.force,
+        ),
+        task_id=str(job_id),
     )
 
     job = await _get_job(db, job_id)
@@ -60,15 +63,18 @@ async def reindex(job_id: UUID, user: AuthenticatedUser = require_admin, db: Asy
                            error=None, stats=None)
 
     reindex_branch = job.get("branch") or "main"
-    index_repository_task.delay(
-        repo_url=job["repo_url"],
-        branch=reindex_branch,
-        commit_sha=None,
-        job_id=str(job_id),
-        version=reindex_branch,
-        discover_tags=True,
-        force_clone=True,
-        force=True,
+    index_repository_task.apply_async(
+        kwargs=dict(
+            repo_url=job["repo_url"],
+            branch=reindex_branch,
+            commit_sha=None,
+            job_id=str(job_id),
+            version=reindex_branch,
+            discover_tags=True,
+            force_clone=True,
+            force=True,
+        ),
+        task_id=str(job_id),
     )
 
     updated = await _get_job(db, job_id)
@@ -77,13 +83,15 @@ async def reindex(job_id: UUID, user: AuthenticatedUser = require_admin, db: Asy
 
 @router.post("/{job_id}/cancel")
 async def cancel_job(job_id: UUID, user: AuthenticatedUser = require_admin, db: AsyncSession = Depends(get_db)):
-    """Cancel a running/pending indexing job."""
+    """Cancel a running/pending indexing job. Revokes the Celery task."""
     job = await _get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job["status"] not in ("pending", "running"):
         raise HTTPException(status_code=400, detail=f"Job is {job['status']}, cannot cancel")
     from datetime import datetime, timezone
+    from app.workers.celery_app import celery_app
+    celery_app.control.revoke(str(job_id), terminate=True, signal="SIGTERM")
     await update_index_job(db, job_id, status="cancelled",
                            finished_at=datetime.now(timezone.utc),
                            error="Cancelled by user")

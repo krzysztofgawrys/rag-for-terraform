@@ -54,10 +54,13 @@ async def github_webhook(
         default_branch = repo_data.get("default_branch", "main")
         job_id = await _enqueue_job(repo_url, default_branch, commit_sha,
                                      "github_webhook_tag")
-        index_repository_task.delay(
-            repo_url=repo_url, branch=default_branch,
-            commit_sha=commit_sha, job_id=str(job_id),
-            version=tag_name,
+        index_repository_task.apply_async(
+            kwargs=dict(
+                repo_url=repo_url, branch=default_branch,
+                commit_sha=commit_sha, job_id=str(job_id),
+                version=tag_name,
+            ),
+            task_id=str(job_id),
         )
         log.info("webhook_tag_accepted", repo=repo_name, tag=tag_name)
         return {"status": "accepted", "job_id": str(job_id), "tag": tag_name}
@@ -132,12 +135,15 @@ async def _enqueue_job(repo_url: str, branch: str,
         job_id = await create_index_job(db, repo_name, branch, commit_sha, triggered_by)
 
     # Send to Celery worker
-    index_repository_task.delay(
-        repo_url=repo_url,
-        branch=branch,
-        commit_sha=commit_sha,
-        job_id=str(job_id),
-        version=branch,
+    index_repository_task.apply_async(
+        kwargs=dict(
+            repo_url=repo_url,
+            branch=branch,
+            commit_sha=commit_sha,
+            job_id=str(job_id),
+            version=branch,
+        ),
+        task_id=str(job_id),
     )
     return str(job_id)
 

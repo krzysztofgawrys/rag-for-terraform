@@ -39,13 +39,16 @@ async def trigger_consumer_indexing(
         repo_url=payload.repo_url,
     )
 
-    index_consumer_repository_task.delay(
-        repo_url=payload.repo_url,
-        branch=payload.branch,
-        commit_sha=payload.commit_sha,
-        job_id=str(job_id),
-        force_clone=payload.force_clone,
-        run_distillation=payload.run_distillation,
+    index_consumer_repository_task.apply_async(
+        kwargs=dict(
+            repo_url=payload.repo_url,
+            branch=payload.branch,
+            commit_sha=payload.commit_sha,
+            job_id=str(job_id),
+            force_clone=payload.force_clone,
+            run_distillation=payload.run_distillation,
+        ),
+        task_id=str(job_id),
     )
 
     job = await _get_job(db, job_id)
@@ -92,7 +95,7 @@ async def list_consumer_jobs(
 
 @router.post("/{job_id}/cancel")
 async def cancel_consumer_job(job_id: UUID, user: AuthenticatedUser = require_admin, db: AsyncSession = Depends(get_db)):
-    """Cancel a running/pending consumer indexing job."""
+    """Cancel a running/pending consumer indexing job. Revokes the Celery task."""
     from app.core.vector_store import update_consumer_index_job
     job = await _get_job(db, job_id)
     if not job:
@@ -100,6 +103,8 @@ async def cancel_consumer_job(job_id: UUID, user: AuthenticatedUser = require_ad
     if job["status"] not in ("pending", "running"):
         raise HTTPException(status_code=400, detail=f"Job is {job['status']}, cannot cancel")
     from datetime import datetime, timezone
+    from app.workers.celery_app import celery_app
+    celery_app.control.revoke(str(job_id), terminate=True, signal="SIGTERM")
     await update_consumer_index_job(db, job_id, status="cancelled",
                                     finished_at=datetime.now(timezone.utc),
                                     error="Cancelled by user")
@@ -175,13 +180,16 @@ async def reindex_consumer(job_id: UUID, user: AuthenticatedUser = require_admin
     )
     await db.commit()
 
-    index_consumer_repository_task.delay(
-        repo_url=job["repo_url"],
-        branch=job.get("branch") or "main",
-        commit_sha=None,
-        job_id=str(job_id),
-        force_clone=True,
-        run_distillation=True,
+    index_consumer_repository_task.apply_async(
+        kwargs=dict(
+            repo_url=job["repo_url"],
+            branch=job.get("branch") or "main",
+            commit_sha=None,
+            job_id=str(job_id),
+            force_clone=True,
+            run_distillation=True,
+        ),
+        task_id=str(job_id),
     )
 
     updated_job = await _get_job(db, job_id)
