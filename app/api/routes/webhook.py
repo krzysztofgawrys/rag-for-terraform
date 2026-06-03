@@ -119,7 +119,7 @@ def _validate_clone_url(repo_url: str) -> None:
     if not allowed:
         raise HTTPException(status_code=403, detail="Webhook host allowlist not configured")
     # Extract hostname from SSH (git@host:...) or HTTPS (https://host/...)
-    m = re.match(r"(?:git@|ssh://(?:[^@]+@)?)([^:/]+)", repo_url)
+    m = re.match(r"(?:git@|ssh://[^@:/]*@|ssh://)([^:/]+)", repo_url)
     if not m:
         m = re.match(r"https?://([^/]+)", repo_url)
     hostname = m.group(1).lower() if m else ""
