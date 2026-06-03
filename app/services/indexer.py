@@ -115,6 +115,7 @@ async def run_indexing(
     module_filter: list[str] | None = None,
     _manage_job_status: bool = True,
     force: bool = False,
+    isolation_id: str | None = None,
 ) -> dict:
     """Index modules from a repo.
 
@@ -137,7 +138,8 @@ async def run_indexing(
                                        started_at=datetime.now(timezone.utc),
                                        finished_at=None, error=None)
             try:
-                repo_dir = _clone_or_pull(repo_url, branch, checkout_ref=checkout_ref)
+                repo_dir = _clone_or_pull(repo_url, branch, checkout_ref=checkout_ref,
+                                         isolation_id=isolation_id)
                 repo_license = _detect_license(repo_dir)
                 if repo_license:
                     log.info("license_detected", repo=repo_name, license=repo_license)
@@ -292,8 +294,10 @@ async def run_tag_indexing(
     """
     repo_name = _repo_name_from_url(repo_url)
 
-    # Clone/pull to get all refs
-    repo_dir = _clone_or_pull(repo_url, branch)
+    # Clone/pull to get all refs — use job_id for isolation so concurrent
+    # indexing jobs for the same repo don't conflict on git operations
+    iso = str(job_id) if job_id else None
+    repo_dir = _clone_or_pull(repo_url, branch, isolation_id=iso)
     tags = _discover_tags(repo_dir)
     log.info("discovered_tags", repo=repo_name, tags=tags, count=len(tags))
 
@@ -319,7 +323,7 @@ async def run_tag_indexing(
     # Pass job_id for module tracking but not for job status management
     combined = await run_indexing(repo_url, branch, version=branch,
                                   job_id=job_id, _manage_job_status=False,
-                                  force=force)
+                                  force=force, isolation_id=iso)
 
     # Index each tag
     _tag_flush: dict = {}
@@ -349,6 +353,7 @@ async def run_tag_indexing(
                 job_id=job_id,
                 _manage_job_status=False,
                 force=force,
+                isolation_id=iso,
             )
             combined["added"] += tag_stats["added"]
             combined["total"] += tag_stats["total"]
@@ -367,6 +372,12 @@ async def run_tag_indexing(
         log.info("tags_skipped_summary", repo=repo_name,
                  count=len(skipped_tags), tags=skipped_tags)
         combined["skipped_tags"] = skipped_tags
+
+    # Clean up isolated working directory
+    if iso:
+        import shutil
+        iso_path = Path(settings.repo_cache_dir) / f"{repo_name}_{iso}"
+        shutil.rmtree(iso_path, ignore_errors=True)
 
     # Enrich stats with readable summary
     combined["modules"] = len(head_modules)
@@ -519,9 +530,11 @@ def _validate_repo_url(repo_url: str) -> None:
 
 
 def _clone_or_pull(repo_url: str, branch: str,
-                   checkout_ref: str | None = None) -> Path:
+                   checkout_ref: str | None = None,
+                   isolation_id: str | None = None) -> Path:
     repo_name = _repo_name_from_url(repo_url)
-    local_path = Path(settings.repo_cache_dir) / repo_name
+    subdir = f"{repo_name}_{isolation_id}" if isolation_id else repo_name
+    local_path = Path(settings.repo_cache_dir) / subdir
     local_path.mkdir(parents=True, exist_ok=True)
 
     if (local_path / ".git").exists():
