@@ -1228,3 +1228,43 @@ select { cursor: pointer; }
     grid-template-columns: 1fr;
   }
 }
+
+/* -- Mobile landing (showcase only, no login) ---------- */
+@media (max-width: 640px) {
+  .landing-signin { display: none; }
+  .landing { min-height: 100vh; min-height: 100dvh; }
+  .landing-content { padding: 48px 20px 24px; }
+  .landing-theme-toggle { position: fixed; top: 12px; right: 12px; left: auto; font-size: 24px; }
+
+  /* Hero */
+  .landing-logo { font-size: 40px; }
+  .landing-hero h1 { font-size: 24px; }
+  .landing-hero { margin-bottom: 32px; }
+  .landing-tagline { font-size: 14px; }
+
+  /* Stats: 2 per row on narrow screens */
+  .landing-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .landing-stat { padding: 12px 6px; }
+  .landing-stat-num { font-size: 22px; }
+  .landing-stat-label { font-size: 10px; }
+
+  /* Features */
+  .landing-features { grid-template-columns: 1fr; gap: 12px; }
+  .landing-feature { padding: 16px; }
+  .landing-feature-icon { font-size: 20px; }
+  .landing-feature h3 { font-size: 13px; }
+  .landing-feature p { font-size: 12px; }
+
+  /* Screenshots: single column */
+  .landing-screenshots h2 { font-size: 16px; }
+  .landing-screenshot-grid { grid-template-columns: 1fr; gap: 12px; }
+  .landing-screenshot span { font-size: 10px; }
+
+  /* Stack */
+  .landing-stack h2 { font-size: 16px; }
+  .landing-stack-items { gap: 6px; }
+  .landing-stack-items span { font-size: 11px; padding: 4px 10px; }
+
+  /* Footer */
+  .landing-footer { font-size: 11px; }
+}

@@ -530,7 +530,7 @@ def _clone_or_pull(repo_url: str, branch: str,
         repo.remotes.origin.fetch(tags=True, force=True)
         ref = checkout_ref or branch
         repo.git.checkout(ref)
-        if not checkout_ref:
+        if not repo.head.is_detached:
             repo.remotes.origin.pull()
     else:
         # Validate URL protocol - block file://, ftp://, and internal hosts
