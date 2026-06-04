@@ -28,7 +28,7 @@
 
 ## Try the live demo
 
-**Web UI** - browse 2500+ modules across 150+ repos (AWS / Azure / GCP):
+**Web UI** - browse 2700+ modules across 175+ repos (AWS / Azure / GCP):
 
 > https://terraform-rag.io
 >
@@ -50,9 +50,10 @@
 }
 ```
 
-8 tools available: `list_modules`, `get_module_details`, `get_dependencies`,
-`get_module_usage`, `find_similar_usages`, `fetch_example_code`, `get_stats`,
-`list_modules` (with `semantic_query` for natural language search).
+9 tools available: `query_modules`, `pick_modules`, `list_modules`,
+`get_module_details`, `get_dependencies`, `get_module_usage`,
+`find_similar_usages`, `fetch_example_code`, `get_stats` (`list_modules`
+also takes `semantic_query` for natural-language search).
 
 ---
 
@@ -64,9 +65,11 @@ PostgreSQL + pgvector. Then it learns _how_ those modules are actually used
 across your consumer repos - naming patterns, variable conventions, tagging
 strategies, deployment layouts - and distils that into authoritative guidance.
 
-An agentic pipeline (Claude, Bedrock, or any OpenAI-compatible model)
-autonomously explores the knowledge base before answering your questions.
-Query from the web UI, the REST API, or directly from your IDE via MCP.
+An agentic pipeline (Claude, Bedrock, or any OpenAI-compatible model) explores
+the knowledge base across multiple tool-use turns to assemble grounded,
+reviewable answers - assistive retrieval with a human in the loop, not an
+autonomous code generator. Query from the web UI, the REST API, or directly
+from your IDE via MCP.
 
 ## See it in action
 
@@ -76,7 +79,7 @@ Query from the web UI, the REST API, or directly from your IDE via MCP.
       <a href="https://terraform-rag.io">
         <img src="docs/screenshots/01-modules.png" width="400" alt="Module browser">
       </a>
-      <br><sub><b>Module Browser</b> - 2500+ modules across 150+ repos</sub>
+      <br><sub><b>Module Browser</b> - 2700+ modules across 175+ repos</sub>
     </td>
     <td align="center">
       <a href="https://terraform-rag.io">
@@ -117,10 +120,10 @@ Query from the web UI, the REST API, or directly from your IDE via MCP.
 
 ## Features
 
-**Agentic Query Pipeline** - not a simple RAG lookup. The LLM autonomously
-browses modules, checks details, reads conventions, and fetches example code
-across multiple turns before composing an answer. Four query modes: compose,
-search, optimize, and audit.
+**Agentic Query Pipeline** - more than a single RAG lookup. The LLM browses
+modules, checks details, reads conventions, and fetches example code across
+multiple tool-use turns before composing an answer for you to review. Four
+query modes: compose, search, optimize, and audit.
 
 **Knowledge Layer** - indexes consumer repos to learn real-world usage patterns.
 Distils conventions across six dimensions (naming, variables, tagging, layout,

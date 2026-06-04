@@ -173,8 +173,8 @@ practice by indexing consumer repos.
 | `evidence_count` | How many deployments support this convention |
 | `eval_score` | Self-evaluation quality score (1-5) |
 | `stale` | `TRUE` when convention failed quality gate |
-| `source_locator` | `consumer-repo@sha:path/file.tf:L42-L78` |
-| `embedding` | `vector(768)` for semantic search |
+| `source_locator` | `consumer-repo@<sha7>:path/file.tf` (no line range) |
+| `embedding` | `vector(N)` for semantic search (768 local / 1024 Bedrock) |
 
 ### Key rule: conventions are authoritative
 
@@ -300,7 +300,7 @@ Key environment variables (see `.env.example` for the full list):
 | `AGENT_MODEL` | _(empty)_ | Override model for agent (defaults to `LLM_MODEL`) |
 | `DESCRIPTION_LLM_MODEL` | _(empty)_ | Cheap model for module descriptions during indexing |
 | `AUDIT_LOG_ENABLED` | `true` | Enable/disable audit logging |
-| `AUDIT_LOG_LLM_PROMPTS` | `true` | `false` redacts prompt/response text in audit logs |
+| `AUDIT_LOG_LLM_PROMPTS` | `false` | `true` stores full prompt/response text in audit logs |
 | `AUTH_MODE` | `disabled` | `disabled`, `local`, or `sso` |
 
 ## Database Schema
@@ -348,10 +348,10 @@ Required secrets: `RAG_BACKEND_URL`, `RAG_API_KEY`.
 
 ## Retrieval Evaluation
 
-A fixture-based evaluation harness measures retrieval accuracy:
+A fixture-based evaluation harness measures retrieval quality:
 
 ```bash
-# CLI
+# CLI (add --token <trag_* key> when auth is enabled)
 python scripts/eval_retrieval.py --url http://localhost:8000
 
 # JSON output
@@ -361,9 +361,48 @@ python scripts/eval_retrieval.py --json
 curl -X POST http://localhost:8000/query/eval
 ```
 
-Edit `scripts/eval_queries.yaml` to add queries with expected module
-references. Each entry specifies a query, expected `module_ref`s, and match
-mode (`any` or `all`). Reports query hit rate and module recall.
+`scripts/eval_queries.yaml` holds the baseline cases (query, expected
+`module_ref`s, `any`/`all` match - reports hit rate and module recall). The
+pure scoring core in `scripts/eval_scoring.py` adds rank-aware fields that catch
+bad ranking, not just recall:
+
+- `top_rank` - the expected ref must appear within the first N (not merely
+  somewhere in top-K), so near-duplicate disambiguation is actually measured
+- `forbidden_refs` - refs that must NOT appear in the rank window (the testable
+  form of "a deprecated/legacy module must not outrank the current one")
+- reciprocal rank / MRR for rank-aware aggregate reporting
+
+`scripts/eval_queries_adversarial.yaml` exercises these against real
+near-duplicate clusters; the report adds MRR and any forbidden-ref violations.
+
+## Testing
+
+A pytest suite (zero mocks - pure functions tested directly, DB logic against a
+real Postgres) covers the deterministic core:
+
+| Area | Covers |
+|---|---|
+| Parser | `parse_module` golden + `_extract_tags` edge cases (pinned to hcl2 4.3.2) |
+| Consumer parser | source/version resolution, usage + compose summaries, end-to-end golden |
+| Graph | recursive-CTE forward/reverse traversal + cycle termination (real Postgres) |
+| Distiller | `extract_assessment` / `strip_preamble` parsing |
+| Migrations | advisory-lock runner: ordering, idempotency, comment-only, concurrency |
+| Vector store | `similarity_search` ranking + latest-version-wins + filters; code-hash cache |
+| Auth | JWT lifecycle, forgery/audience/expiry rejection, API-key hashing |
+| Webhook / SSRF | GitHub HMAC accept/reject; clone-URL allowlist + metadata blocking |
+| Eval scoring | rank-aware scoring (`forbidden_refs`, `top_rank`, MRR) |
+
+```bash
+# needs the app dependencies + the pytest stack; hcl2 stays pinned at 4.3.2
+pip install -r requirements.txt pytest pytest-asyncio pytest-timeout
+POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 POSTGRES_USER=postgres \
+POSTGRES_PASSWORD=postgres POSTGRES_DB=ragtest pytest tests/ -v
+```
+
+DB-backed tests skip cleanly when no Postgres is reachable. The agent loop, LLM
+distiller, and model embeddings are deliberately NOT unit-tested -
+non-deterministic output makes mock tests test the mock; use the eval harness
+plus a recall/MRR threshold for those instead.
 
 ## Frontend Development
 
@@ -378,6 +417,25 @@ npm run dev    # Vite dev server at :3000, proxies API to :8000
 A production Docker Compose file (`docker-compose.prod.yml`) is included.
 It does not expose database/Redis ports to the host and does not use
 bind-mount volumes.
+
+## Security
+
+- **Agent tools are read-only** over the indexed DB - a prompt-injected agent
+  can read but cannot write or shell out. This is the single largest piece of
+  risk reduction in the design; keep it that way.
+- **Auth**: API keys (`trag_*`, SHA-256 hashed), local JWT (HS256, audience-
+  validated, refused to boot on the default secret), or ALB-terminated SSO.
+  SSO group claims are read only from a signature-verified Cognito token.
+- **Clone SSRF**: every clone path (webhook, `/index/`, reindex, consumer)
+  validates the repo host against an allowlist and blocks loopback / RFC-1918 /
+  cloud-metadata addresses.
+- **Webhooks**: GitHub HMAC-SHA256 is enforced (no silent bypass when unset);
+  GitLab uses a token header; both check the clone-host allowlist.
+- **Frontend**: streamed LLM/markdown output is rendered through DOMPurify;
+  anti-clickjacking/MIME headers are set, with CSP and Cloudflare in front of
+  the hosted demo.
+- **Audit**: every MCP tool, LLM call, and significant API action is logged;
+  prompt/response text is redacted by default (`AUDIT_LOG_LLM_PROMPTS=false`).
 
 ## Known Limitations
 
@@ -394,11 +452,15 @@ flag for low-scoring conventions, `eval_reason` for manual review. A proper
 fix requires an external correctness signal (security policies, version checks,
 human review).
 
-### Manual convention distillation
+### Convention distillation timing
 
-Module re-indexing triggers automatically, but convention distillation requires
-a manual `POST /consumer/distill` call. Consider adding it to your CI pipeline
-or scheduling as a cron job.
+Convention distillation runs automatically as part of consumer indexing
+(`run_distillation=true`, the default): re-indexing a consumer repo redistils
+the conventions for the modules it touches. A manual `POST /consumer/distill`
+remains available for ad-hoc runs, and
+`.github/workflows/rag-consumer-index.yml.example` shows wiring it into a
+consumer repo's CI. (Distillation does not yet run on a standalone schedule -
+it is tied to consumer-repo indexing events.)
 
 ### Vector space scaling
 
