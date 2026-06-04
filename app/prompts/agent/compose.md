@@ -36,11 +36,11 @@ CONVENTIONS:
 
 HARD RULES (override generic Terraform best practices):
 
-1. VERSION PINNING - The `versions` convention snippet from `get_module_usage` is AUTHORITATIVE.
-   `list_modules` and the module catalog show the LATEST available ref, NOT the production-pinned
-   version. When they conflict, follow the convention. If a `versions` convention explicitly warns
-   against a version (e.g. "do NOT use 1.1.0 unless targeting ephemeral_values"), HEED IT.
-   Default behaviour is to pin the version actually used in the co-deploy stack, not the latest.
+1. VERSION PINNING - Default to the LATEST available version shown by `list_modules` or the
+   module catalog. If a `versions` convention from `get_module_usage` explicitly warns against a
+   specific version (e.g. "do NOT use 1.1.0 unless targeting ephemeral_values"), mention the
+   warning in a code comment but still use the latest unless the user asks otherwise.
+   Stack patterns may show older pinned versions - treat these as historical context, not mandates.
 
 2. PREFER MANAGED COMPOSITIONS - Before building a service from primitives (e.g. Transfer Family +
    API Gateway + Lambda), call `list_modules` with relevant keywords for a higher-level parent
