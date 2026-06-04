@@ -1,98 +1,92 @@
-# Adversarial retrieval-eval fixtures.
+# Adversarial retrieval-eval fixtures - REAL refs from the imported KB
+# (terraform-aws-* public modules, Bedrock Titan-v2 1024-dim embeddings).
 #
-# These exercise what the baseline eval_queries.yaml cannot: ranking QUALITY,
-# not just recall. The baseline asks "did the right module appear in top-K?";
-# at top_k=5 that passes even when the right module sits behind four wrong ones.
-# These cases tighten the screws with two new fields (see scripts/eval_scoring.py):
+# These test ranking QUALITY (top_rank) and wrong-variant guards (forbidden_refs),
+# not just recall - the baseline eval_queries.yaml passes even when the right
+# module hides behind near-duplicates. See scripts/eval_scoring.py for the fields.
 #
-#   top_rank        - the expected ref must appear within the first N positions,
-#                     not merely somewhere in top_k. Use top_rank: 1 to demand
-#                     the correct module RANKS FIRST among near-duplicates.
-#   forbidden_refs  - refs that MUST NOT appear (within the rank window). The
-#                     testable form of "a deprecated/legacy module must not
-#                     outrank the current one".
-#
-# IMPORTANT: every module_ref below is a PLACEHOLDER. Replace them with your
-# real repo/module_path values, or these cases will all "miss" against your KB.
-# Run with the extended harness once scripts/eval_retrieval.py is wired to
-# scripts/eval_scoring.py (score_case + case_from_entry + the new fields).
+# Run against the local stack (admin token = a trag_* API key):
+#   python scripts/eval_retrieval.py --url http://localhost:8000 \
+#     --token trag_<adminkey> --fixture scripts/eval_queries_adversarial.yaml
 
 # ---------------------------------------------------------------------------
-# 1. Disambiguation among near-duplicate modules - the core use case.
-#    Many vpc-* modules look alike by name/description; only the right one
-#    must rank first for this intent. top_rank: 1 fails if a sibling wins.
+# 1. EKS node-group disambiguation: the MANAGED node-group module must rank
+#    near the top among self-managed / node_groups / example variants.
 # ---------------------------------------------------------------------------
-- query: "VPC that attaches to an EXISTING transit gateway (do not create a new TGW)"
+- query: "reusable module for an EKS managed node group running spot instances"
   query_type: compose
   expected_refs:
-    - "terraform-modules/networking/vpc-tgw-attach"
-  top_k: 8
-  top_rank: 1
-  match: all
-  description: "near-dup disambiguation: must outrank vpc-tgw-create and plain vpc"
-
-- query: "egress-only VPC for a private workload, no NAT gateway"
-  query_type: compose
-  expected_refs:
-    - "terraform-modules/networking/vpc-egress-only"
-  top_k: 8
-  top_rank: 2
-  match: all
-  description: "must beat the full-NAT vpc variants on a semantic distinction"
-
-# ---------------------------------------------------------------------------
-# 2. Negative / deprecation guards - popularity must not beat correctness.
-#    The legacy module may be the most-used (highest evidence_count), so a
-#    usage-driven tie-break could surface it. It must NOT win.
-# ---------------------------------------------------------------------------
-- query: "S3 bucket with encryption and versioning"
-  query_type: compose
-  expected_refs:
-    - "terraform-modules/storage/s3"          # the current, maintained module
+    - "terraform-aws-eks/modules/eks-managed-node-group"
   forbidden_refs:
-    - "terraform-modules/storage/s3-legacy"   # deprecated; popular but wrong
-  top_k: 5
-  top_rank: 3
-  match: all
-  description: "deprecated s3-legacy must not appear in the top 3"
-
-- query: "IAM role for an ECS task"
-  query_type: compose
-  expected_refs:
-    - "terraform-modules/iam/ecs-task-role"
-  forbidden_refs:
-    - "terraform-modules/iam/role-wildcard"   # over-permissive, must never surface here
-  top_k: 5
-  top_rank: 3
-  match: all
-  description: "the wildcard-permission role must not be recommended for a task role"
-
-# ---------------------------------------------------------------------------
-# 3. Multi-module stack with ranking discipline - both pieces, near the top.
-# ---------------------------------------------------------------------------
-- query: "ECS Fargate service behind an ALB, using our existing cluster"
-  query_type: compose
-  expected_refs:
-    - "terraform-modules/ecs/service"
-    - "terraform-modules/ecs/alb"
-  forbidden_refs:
-    - "terraform-modules/ecs/cluster"         # 'existing cluster' -> must NOT propose creating one
+    - "terraform-aws-eks/modules/self-managed-node-group"
   top_k: 8
   top_rank: 4
   match: all
-  description: "both service+alb in top 4; cluster module must not be pulled in"
+  description: "managed (not self-managed) node group ranks in the top 4"
 
 # ---------------------------------------------------------------------------
-# 4. Pure negative - a forbidden-only assertion needs one expected anchor too
-#    (the scorer requires at least one expected ref to register a 'hit').
+# 2. IAM near-duplicate cluster (~8 iam-assumable-role* variants look alike).
+#    OIDC service-account role is correct; the SAML variant must not surface.
 # ---------------------------------------------------------------------------
-- query: "simple static website on S3"
+- query: "IAM role assumable by an EKS service account through OIDC federation"
   query_type: compose
   expected_refs:
-    - "terraform-modules/storage/s3-website"
+    - "terraform-aws-iam/modules/iam-role-for-service-accounts-eks"
   forbidden_refs:
-    - "terraform-modules/storage/s3-legacy"
-  top_k: 5
+    - "terraform-aws-iam/modules/iam-assumable-role-with-saml"
+  top_k: 10
+  top_rank: 5
+  match: all
+  description: "near-dup IAM: OIDC service-account role outranks the SAML variant"
+
+# ---------------------------------------------------------------------------
+# 3. RDS: the database instance, not one of its sub-components.
+# ---------------------------------------------------------------------------
+- query: "managed AWS RDS relational database instance"
+  query_type: compose
+  expected_refs:
+    - "terraform-aws-rds/."
+  forbidden_refs:
+    - "terraform-aws-rds/modules/db_subnet_group"
+  top_k: 8
+  top_rank: 3
+  match: all
+  description: "RDS root module ranks above its db_subnet_group sub-component"
+
+# ---------------------------------------------------------------------------
+# 4. S3: the bucket module, not the per-object sub-module.
+# ---------------------------------------------------------------------------
+- query: "S3 bucket with server-side encryption, versioning and public access blocked"
+  query_type: compose
+  expected_refs:
+    - "terraform-aws-s3-bucket/."
+  forbidden_refs:
+    - "terraform-aws-s3-bucket/modules/object"
+  top_k: 8
+  top_rank: 3
+  match: all
+  description: "bucket module outranks the s3 object sub-module"
+
+# ---------------------------------------------------------------------------
+# 5. Karpenter: specific EKS autoscaler - intent must surface the right module.
+# ---------------------------------------------------------------------------
+- query: "Karpenter just-in-time node autoscaling for an EKS cluster"
+  query_type: compose
+  expected_refs:
+    - "terraform-aws-eks/modules/karpenter"
+  top_k: 8
+  top_rank: 3
+  match: all
+  description: "karpenter module surfaces for the autoscaling intent"
+
+# ---------------------------------------------------------------------------
+# 6. VPC: core networking root module ranks first for the core intent.
+# ---------------------------------------------------------------------------
+- query: "AWS VPC with public and private subnets across multiple availability zones"
+  query_type: compose
+  expected_refs:
+    - "terraform-aws-vpc/."
+  top_k: 8
   top_rank: 2
   match: all
-  description: "static-site intent resolves to s3-website, never the legacy bucket"
+  description: "vpc root module ranks first for the core networking intent"
