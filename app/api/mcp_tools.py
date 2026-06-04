@@ -458,6 +458,7 @@ async def list_modules(
                 repo_filter=repo,
                 tag_filter=tag,
                 version_filter=None,
+                query_text=semantic_query,
             )
 
         # Apply resource_type filter post-search (not supported by similarity_search)
@@ -565,7 +566,8 @@ async def get_module_details(repo: str, module_path: str) -> str:
                          THEN 1 ELSE 0 END,
                     (regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[1]::int DESC NULLS LAST,
                     (regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[2]::int DESC NULLS LAST,
-                    COALESCE((regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[3]::int, 0) DESC
+                    COALESCE((regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[3]::int, 0) DESC,
+                    version DESC
                 LIMIT 1
             """),
             {"repo": repo, "module_path": module_path},

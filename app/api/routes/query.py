@@ -177,7 +177,7 @@ async def eval_retrieval(
         t0 = time.monotonic()
         query_vec = embed_query(query_text, query_type=query_type)
         similar = await vs.similarity_search(
-            db, query_embedding=query_vec, top_k=top_k,
+            db, query_embedding=query_vec, top_k=top_k, query_text=query_text,
         )
         latency_ms = int((time.monotonic() - t0) * 1000)
 

@@ -6,6 +6,7 @@ from sqlalchemy import text
 from pgvector.sqlalchemy import Vector
 from app.core.config import get_settings
 from app.core.parser import ParsedModule
+from app.core.ports import extract_query_ports, query_tokens
 
 log = structlog.get_logger()
 settings = get_settings()
@@ -116,6 +117,39 @@ async def find_by_code_hash(
 
 # -- Search ---------------------------------------------------------------------
 
+async def _catalog_name_tokens(db: AsyncSession, repo_filter) -> set[str]:
+    """Service-name tokens from the indexed catalog, for the lexical gate.
+
+    Built from preset module names (NOT the root '.' module) with the repo-name
+    tokens subtracted: otherwise the repo name (e.g.
+    "terraform-aws-security-group") injects generic tokens like "security" /
+    "group" that appear in every query's framing ("security group for ...") and
+    would defeat the gate, firing lexical on every query.
+
+    Queried per call (cheap: DISTINCT over a small name set). Could be cached
+    with invalidation-on-index if it ever shows up in profiles.
+    """
+    conds: list[str] = ["module_path <> '.'"]
+    params: dict = {}
+    if repo_filter:
+        if isinstance(repo_filter, list):
+            conds.append("repo = ANY(:rf)")
+            params["rf"] = repo_filter
+        else:
+            conds.append("repo = :rf")
+            params["rf"] = repo_filter
+    where = " WHERE " + " AND ".join(conds)
+    rows = (await db.execute(
+        text(f"SELECT DISTINCT repo, module_name FROM modules{where}"), params
+    )).all()
+    name_tokens: set[str] = set()
+    repo_tokens: set[str] = set()
+    for repo, name in rows:
+        name_tokens |= query_tokens(name)
+        repo_tokens |= query_tokens(repo)
+    return name_tokens - repo_tokens
+
+
 async def similarity_search(
     db: AsyncSession,
     query_embedding: list[float],
@@ -123,13 +157,25 @@ async def similarity_search(
     repo_filter: list[str] | str | None = None,
     tag_filter: list[str] | None = None,
     version_filter: list[str] | str | None = None,
+    query_text: str | None = None,
 ) -> list[dict]:
     """Cosine similarity search with optional repo/tag/version filters.
 
-    repo_filter: None → all repos, str → single, list → any of.
-    tag_filter: None → all tags, list → modules matching ANY of the tags.
-    version_filter: None → latest only, "*" → all versions, str → specific,
-                    list → any of the versions.
+    repo_filter: None -> all repos, str -> single, list -> any of.
+    tag_filter: None -> all tags, list -> modules matching ANY of the tags.
+    version_filter: None -> latest only, "*" -> all versions, str -> specific,
+                    list -> any of the versions.
+    query_text: when provided, a lexical (full-text) signal is fused with the
+        cosine signal via Reciprocal Rank Fusion (RRF). This is a *recall*
+        aid: it lifts modules whose discriminating tokens (e.g. a port number)
+        match the query but whose embedding ranks them low. It is NOT a
+        reliable #1 tie-breaker for near-duplicate intent-only queries - the
+        agent layer (port inspection via get_module_details) does that.
+        When None, behaviour is identical to pure cosine search.
+
+    Every returned row carries both `similarity` (raw cosine, 0..1) and
+    `score` (the ranking score actually used: cosine when query_text is None,
+    the fused RRF score otherwise).
     """
 
     conditions = ["TRUE"]
@@ -165,51 +211,124 @@ async def similarity_search(
 
     where = " AND ".join(conditions)
 
+    # Candidate pool: one row per module (latest semver) by default, or every
+    # matching version when a version_filter is set. Latest-semver selection
+    # ensures the LLM always sees variables/outputs from the newest release,
+    # not from whichever old tag happened to embed closest.
     if version_filter is None and not _vf_all:
-        # Default: one row per module — latest semver version.
-        # Step 1: pick the latest semver version per (repo, module_path).
-        # Step 2: rank those by cosine similarity.
-        # This ensures the LLM always sees variables/outputs from the
-        # newest release, not from whichever version happened to have
-        # the closest embedding (often an old tag like v1.0.0).
+        candidates_sql = f"""
+            SELECT DISTINCT ON (repo, module_path) *
+            FROM modules
+            WHERE {where}
+            ORDER BY repo, module_path,
+                CASE WHEN version ~ '^(master|main|develop|HEAD)$'
+                     THEN 1 ELSE 0 END,
+                (regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[1]::int DESC NULLS LAST,
+                (regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[2]::int DESC NULLS LAST,
+                COALESCE((regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[3]::int, 0) DESC,
+                version DESC
+        """
+    else:
+        candidates_sql = f"SELECT * FROM modules WHERE {where}"
+
+    if not query_text:
+        # Pure cosine (unchanged behaviour). `score` mirrors `similarity` so
+        # callers can read one field regardless of path.
         result = await db.execute(
             text(f"""
-                WITH latest AS (
-                    SELECT DISTINCT ON (repo, module_path) *
-                    FROM modules
-                    WHERE {where}
-                    ORDER BY repo, module_path,
-                        CASE WHEN version ~ '^(master|main|develop|HEAD)$'
-                             THEN 1 ELSE 0 END,
-                        (regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[1]::int DESC NULLS LAST,
-                        (regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[2]::int DESC NULLS LAST,
-                        COALESCE((regexp_match(version, '(\\d+)\\.(\\d+)(?:\\.(\\d+))?'))[3]::int, 0) DESC
-                )
+                WITH candidates AS ({candidates_sql})
                 SELECT id, repo, module_name, module_path, version, tags,
                        variables, outputs, resources, description,
-                       1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-                FROM latest
+                       1 - (embedding <=> CAST(:embedding AS vector)) AS similarity,
+                       1 - (embedding <=> CAST(:embedding AS vector)) AS score
+                FROM candidates
                 ORDER BY embedding <=> CAST(:embedding AS vector)
                 LIMIT :top_k
             """),
             params,
         )
         return [dict(r) for r in result.mappings().all()]
-    else:
-        result = await db.execute(
-            text(f"""
-                SELECT
-                    id, repo, module_name, module_path, version, tags,
-                    variables, outputs, resources, description,
-                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-                FROM modules
-                WHERE {where}
+
+    # Hybrid: fuse cosine rank with lexical (full-text) rank via RRF. The
+    # tsquery is the OR of the query's lexemes (websearch/plainto use AND,
+    # which would match almost nothing since no description contains every
+    # query word). ts_rank is GIN-index-backed and fast.
+    query_ports = extract_query_ports(query_text)
+    # Gate the lexical signal: it joins the fusion ONLY when the query carries a
+    # discriminating token - a port, or a catalog service-name token (e.g.
+    # "redis", "kafka"). On a pure category paraphrase ("in-memory key-value
+    # cache") it has neither, and ts_rank (no idf) would only add category-level
+    # noise that demotes the correct near-dup (measured: 6/8 -> 4/8). There,
+    # cosine alone is better. Skip the catalog lookup when a port already
+    # qualifies the query.
+    lex_enabled = bool(query_ports) or bool(
+        query_tokens(query_text) & await _catalog_name_tokens(db, repo_filter)
+    )
+    params["query_text"] = query_text
+    params["rrf_k"] = 60
+    params["pool"] = max(50, top_k * 5)
+    # Third signal: an exact listening-port match (query "...on port 6379" ->
+    # modules whose `ports` array contains 6379). This is a deterministic,
+    # near-unique disambiguator that the embedding and lexical signals cannot
+    # provide - so it gets a strong additive boost that dominates the rank-based
+    # RRF terms, lifting the port-matching module above its category near-dups.
+    # When the query names no port, the port set is empty and this is a no-op.
+    params["query_ports"] = query_ports
+    params["port_boost"] = 1.0
+    params["lex_enabled"] = lex_enabled
+    result = await db.execute(
+        text(f"""
+            WITH candidates AS ({candidates_sql}),
+            q AS (
+                SELECT to_tsquery('english',
+                    array_to_string(
+                        tsvector_to_array(to_tsvector('english', :query_text)),
+                        ' | ')) AS tq
+            ),
+            sem AS (
+                SELECT id,
+                       row_number() OVER (
+                           ORDER BY embedding <=> CAST(:embedding AS vector)) AS rk
+                FROM candidates
                 ORDER BY embedding <=> CAST(:embedding AS vector)
-                LIMIT :top_k
-            """),
-            params,
-        )
-        return [dict(r) for r in result.mappings().all()]
+                LIMIT :pool
+            ),
+            lex AS (
+                SELECT c.id,
+                       row_number() OVER (
+                           ORDER BY ts_rank(c.search_tsv, q.tq) DESC) AS rk
+                FROM candidates c, q
+                WHERE :lex_enabled AND c.search_tsv @@ q.tq
+                ORDER BY ts_rank(c.search_tsv, q.tq) DESC
+                LIMIT :pool
+            ),
+            port AS (
+                SELECT id
+                FROM candidates
+                WHERE ports IS NOT NULL AND ports && :query_ports
+                LIMIT :pool
+            ),
+            fused AS (
+                SELECT COALESCE(s.id, l.id, p.id) AS id,
+                       COALESCE(1.0 / (:rrf_k + s.rk), 0)
+                       + COALESCE(1.0 / (:rrf_k + l.rk), 0)
+                       + CASE WHEN p.id IS NOT NULL THEN :port_boost ELSE 0 END AS score
+                FROM sem s
+                FULL OUTER JOIN lex l ON s.id = l.id
+                FULL OUTER JOIN port p ON p.id = COALESCE(s.id, l.id)
+            )
+            SELECT m.id, m.repo, m.module_name, m.module_path, m.version, m.tags,
+                   m.variables, m.outputs, m.resources, m.description,
+                   1 - (m.embedding <=> CAST(:embedding AS vector)) AS similarity,
+                   f.score AS score
+            FROM fused f
+            JOIN candidates m ON m.id = f.id
+            ORDER BY f.score DESC, similarity DESC
+            LIMIT :top_k
+        """),
+        params,
+    )
+    return [dict(r) for r in result.mappings().all()]
 
 
 async def get_modules_by_tag(db: AsyncSession, tag: str) -> list[dict]:

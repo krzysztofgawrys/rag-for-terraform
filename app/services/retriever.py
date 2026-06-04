@@ -395,6 +395,7 @@ async def _multi_query_search(
     db, query_vec: list[float],
     top_k: int, repo_filter, tag_filter, version_filter,
     expand_deps: bool,
+    query_text: str | None = None,
 ) -> list[dict]:
     """Search modules by embedding similarity, optionally expanding with deps.
 
@@ -409,6 +410,7 @@ async def _multi_query_search(
         repo_filter=repo_filter,
         tag_filter=tag_filter,
         version_filter=version_filter,
+        query_text=query_text,
     )
 
     if not expand_deps:
@@ -446,6 +448,7 @@ async def query(request: QueryRequest, db) -> QueryResponse:
         tag_filter=request.tag_filter,
         version_filter=request.version_filter,
         expand_deps=_is_compose_mode(request.query_type),
+        query_text=request.query,
     )
 
     # Parallel path: search usage snippets for existing deployments
@@ -529,6 +532,7 @@ async def stream_query(request: QueryRequest, db):
         tag_filter=request.tag_filter,
         version_filter=request.version_filter,
         expand_deps=_is_compose_mode(request.query_type),
+        query_text=request.query,
     )
 
     # Parallel path: search usage snippets for existing deployments

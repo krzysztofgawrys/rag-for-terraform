@@ -315,6 +315,7 @@ async def _build_initial_context(request: QueryRequest, db) -> tuple[str, list[d
         repo_filter=request.repo_filter,
         tag_filter=request.tag_filter,
         version_filter=request.version_filter,
+        query_text=request.query,
     )
 
     parts: list[str] = []

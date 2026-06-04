@@ -1,0 +1,85 @@
+# Hard near-duplicate disambiguation - the core thesis under test.
+#
+# terraform-aws-security-group/modules/* is 58 structurally near-identical
+# security-group modules; only the *service* distinguishes them (descriptions
+# and variables are nearly the same). Lexical/BM25 retrieval cannot separate
+# them - semantic ranking is the only signal. `top_rank: 1` demands the correct
+# twin ranks FIRST in the returned sources (the embedding layer), and
+# `forbidden_refs` names the most confusable sibling that must not outrank it.
+#
+# This measures the semantic-search layer (the `sources` seed), not the agent's
+# later usage-tool disambiguation. Run against the populated KB:
+#   python scripts/eval_retrieval.py --url http://localhost:8000 \
+#     --token trag_<adminkey> --fixture scripts/eval_queries_neardup.yaml
+
+- query: "security group for an Elasticsearch cluster"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/elasticsearch"]
+  forbidden_refs: ["terraform-aws-security-group/modules/kibana"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "elasticsearch SG ranks #1 over the ELK siblings (kibana/logstash)"
+
+- query: "security group for a PostgreSQL database"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/postgresql"]
+  forbidden_refs: ["terraform-aws-security-group/modules/mysql"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "postgresql SG beats the other relational DBs (mysql/oracle/mssql)"
+
+- query: "security group for a Redis cache"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/redis"]
+  forbidden_refs: ["terraform-aws-security-group/modules/memcached"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "redis SG beats the other in-memory cache (memcached)"
+
+- query: "security group for a Kafka broker"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/kafka"]
+  forbidden_refs: ["terraform-aws-security-group/modules/zookeeper"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "kafka SG beats its own coordination sibling (zookeeper)"
+
+- query: "security group for HashiCorp Vault"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/vault"]
+  forbidden_refs: ["terraform-aws-security-group/modules/consul"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "vault SG beats the other HashiCorp tools (consul/nomad)"
+
+- query: "security group for Prometheus monitoring"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/prometheus"]
+  forbidden_refs: ["terraform-aws-security-group/modules/grafana"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "prometheus SG beats adjacent observability (grafana/loki/alertmanager)"
+
+- query: "security group for a MongoDB replica set"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/mongodb"]
+  forbidden_refs: ["terraform-aws-security-group/modules/cassandra"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "mongodb SG beats the other NoSQL store (cassandra)"
+
+- query: "security group for an OpenVPN server"
+  query_type: compose
+  expected_refs: ["terraform-aws-security-group/modules/openvpn"]
+  forbidden_refs: ["terraform-aws-security-group/modules/ipsec-500"]
+  top_k: 10
+  top_rank: 1
+  match: all
+  description: "openvpn SG beats the other VPN (ipsec)"
