@@ -105,6 +105,39 @@ def _detect_license(repo_dir: Path) -> str | None:
 
 # -- Single-version indexing --------------------------------------------------
 
+async def _resolve_repo_ports(db, repo: str, version: str) -> int:
+    """Populate modules.ports for the just-indexed (repo, version) rows.
+
+    Ports come deterministically from the canonical rules map (the root '.'
+    module's `rules` variable default) plus inline from_port literals - never a
+    name heuristic or an LLM. Scoped to this version so re-indexing keeps ports
+    in sync. Repos without a root rules map fall back to inline literals only.
+    See app/core/ports.py.
+    """
+    from sqlalchemy import text as _text
+    from app.core.ports import build_rule_port_map, resolve_ports as _resolve
+
+    root = (await db.execute(_text(
+        "SELECT variables->'rules'->'default' AS rules FROM modules "
+        "WHERE repo = :r AND module_path = '.' AND version = :v"
+    ), {"r": repo, "v": version})).mappings().first()
+    rule_map = build_rule_port_map(root["rules"] if root else None)
+
+    rows = (await db.execute(_text(
+        "SELECT id, variables, raw_code FROM modules WHERE repo = :r AND version = :v"
+    ), {"r": repo, "v": version})).mappings().all()
+    for r in rows:
+        ports = _resolve(r["variables"], r["raw_code"], rule_map)
+        await db.execute(
+            _text("UPDATE modules SET ports = :p WHERE id = :id"),
+            {"p": ports, "id": r["id"]},
+        )
+    # Commit our own writes - do not depend on a downstream commit (the
+    # job-status block is skipped when _manage_job_status=False).
+    await db.commit()
+    return len(rows)
+
+
 async def run_indexing(
     repo_url: str,
     branch: str = "main",
@@ -251,6 +284,15 @@ async def run_indexing(
                             log.error("module_index_failed", module=module.module_name, error=str(e))
                         if job_id and _manage_job_status:
                             await _flush_stats(job_id, stats, _last_flush)
+
+                # Resolve structured listening ports from the canonical rules map
+                # now that all modules (including the root rules map) are stored.
+                # Enrichment only - never fail the index over it.
+                try:
+                    n_ports = await _resolve_repo_ports(db, repo_name, version)
+                    log.info("ports_resolved", repo=repo_name, version=version, rows=n_ports)
+                except Exception as e:
+                    log.warning("ports_resolution_failed", repo=repo_name, error=str(e))
 
                 if job_id and _manage_job_status:
                     await update_index_job(
@@ -701,10 +743,19 @@ def _build_description_prompt(module: ParsedModule) -> str:
 
 
 def _description_fallback(module: ParsedModule) -> str:
+    # Used only when the LLM fails entirely. Keep it FUNCTIONAL, not a bare
+    # skeleton: the path leaf is usually the service, and rule-style variable
+    # defaults (e.g. auto_ingress_rules=["redis-tcp"]) carry the preset intent.
+    service = module.module_path.rstrip("/").split("/")[-1] or module.module_name
+    resources = ", ".join(set(module.resources)) or "none"
+    hints: list[str] = []
+    for k, v in list(module.variables.items()):
+        if "rule" in k.lower() and isinstance(v, dict) and v.get("default"):
+            hints.append(f"{k}={v['default']}")
+    hint_str = (" Configures " + "; ".join(hints[:4]) + ".") if hints else ""
     return (
-        f"Terraform module '{module.module_name}' from '{module.repo}'. "
-        f"Resources: {', '.join(set(module.resources)) or 'none'}. "
-        f"Tags: {', '.join(module.tags) or 'none'}."
+        f"Terraform module '{service}' from '{module.repo}' (path '{module.module_path}'). "
+        f"Resources created: {resources}. Tags: {', '.join(module.tags) or 'none'}.{hint_str}"
     )
 
 
@@ -712,61 +763,91 @@ _DESC_EVAL_SYSTEM = load_prompt("indexer/description_eval.md")
 
 
 def _eval_prompt(module: ParsedModule, description: str) -> str:
-    """Build evaluation prompt with full metadata context."""
+    """Build evaluation prompt with full metadata context.
+
+    Includes outputs and the ingress/egress rule defaults so the gate can
+    GROUND the description: without outputs it flags real outputs
+    (security_group_id) as invented; without the rule defaults it flags a
+    grounded port (auto_ingress_rules=['redis-tcp'] => 6379) as unsupported.
+    These omissions were rejecting accurate wrapper-preset descriptions.
+    """
     resources_str = ", ".join(set(module.resources)) or "none"
     vars_str = ", ".join(module.variables.keys()) or "none"
+    outputs_str = ", ".join(module.outputs.keys()) or "none"
     deps = [d for d in module.dependencies if d] if module.dependencies else []
     calls_str = ", ".join(deps) if deps else "none"
+    # Rule-name defaults ground any port/service claim (e.g. 'redis-tcp' => 6379).
+    rule_lines = []
+    for k in ("auto_ingress_rules", "ingress_rules", "auto_egress_rules"):
+        v = module.variables.get(k)
+        if isinstance(v, dict) and v.get("default"):
+            rule_lines.append(f"{k}={v['default']}")
+    rules_str = "; ".join(rule_lines) or "none"
     return (
-        f"Module: {module.module_name} (repo: {module.repo})\n"
-        f"Resources (ONLY these are created by this module): {resources_str}\n"
+        f"Module: {module.module_name} (repo: {module.repo}, path: {module.module_path})\n"
+        f"Resources (ONLY these are created directly by this module): {resources_str}\n"
         f"Child module calls (other modules it invokes, NOT its own resources): {calls_str}\n"
-        f"Variables: {vars_str}\n\n"
+        f"Variables: {vars_str}\n"
+        f"Ingress/egress rule defaults (preconfigured rule NAMES - these ground "
+        f"any port/service claim): {rules_str}\n"
+        f"Outputs (these ARE provided by the module): {outputs_str}\n\n"
         f"Generated description:\n{description}"
     )
+
+
+def _parse_eval_response(raw: str | None) -> tuple[int | None, str]:
+    """Extract (score, issues) from an eval-LLM reply, tolerantly.
+
+    Handles code fences, surrounding prose, and - critically - JSON truncated
+    mid-`issues` by the token cap. The score is the FIRST field in the schema,
+    so a regex fallback recovers it even when strict JSON parsing fails on a
+    cut-off reply. This closes the gap where a low score with a verbose `issues`
+    string used to truncate, fail to parse, and silently default to a passing 3.
+
+    Returns (None, reason) only when no score digit can be found at all (a
+    genuine eval failure, not a truncation-masked low score).
+    """
+    import json as _json
+    import re as _re
+
+    if not raw or not raw.strip():
+        return None, "eval_empty"
+    cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    # Strict JSON first - captures the exact issues text on a whole reply.
+    block = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+    if block:
+        try:
+            data = _json.loads(block.group(0))
+            return max(1, min(5, int(data["score"]))), str(data.get("issues", ""))
+        except (ValueError, TypeError, KeyError, _json.JSONDecodeError):
+            pass
+    # Tolerant fallback: the score digit survives truncation; issues best-effort.
+    sm = _re.search(r'"?score"?\s*[:=]\s*([1-5])', cleaned)
+    if not sm:
+        return None, "eval_unparseable"
+    im = _re.search(r'"?issues"?\s*[:=]\s*"(.*?)"', cleaned, _re.DOTALL)
+    return int(sm.group(1)), (im.group(1) if im else "eval_partial_parse")
 
 
 def _evaluate_description(module: ParsedModule, description: str) -> tuple[int, str]:
     """Evaluate a generated description against the module metadata.
 
-    Returns (score 1-5, issues). On LLM failure returns (3, "eval_failed").
+    Returns (score 1-5, issues). A genuinely unparseable eval reply defaults to
+    a neutral 3 (benefit of the doubt for an eval-infra failure) - but a low
+    score buried in a truncated reply is now read correctly, not passed through.
     """
-    import json as _json
-
     prompt = _eval_prompt(module, description)
-
-    raw = llm.describe(prompt, system=_DESC_EVAL_SYSTEM, max_tokens=150)
-    if not raw:
-        return 3, "eval_failed"
-
-    try:
-        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        data = _json.loads(cleaned)
-        score = int(data.get("score", 3))
-        issues = str(data.get("issues", ""))
-        return max(1, min(5, score)), issues
-    except (ValueError, _json.JSONDecodeError):
-        return 3, "eval_parse_failed"
+    raw = llm.describe(prompt, system=_DESC_EVAL_SYSTEM, max_tokens=300)
+    score, issues = _parse_eval_response(raw)
+    return (3, issues) if score is None else (score, issues)
 
 
 async def _aevaluate_description(module: ParsedModule, description: str) -> tuple[int, str]:
-    """Async version of _evaluate_description."""
-    import json as _json
-
+    """Async version of _evaluate_description (same tolerant parsing)."""
     prompt = _eval_prompt(module, description)
-
-    raw = await llm.adescribe(prompt, system=_DESC_EVAL_SYSTEM, max_tokens=150)
-    if not raw:
-        return 3, "eval_failed"
-
-    try:
-        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        data = _json.loads(cleaned)
-        score = int(data.get("score", 3))
-        issues = str(data.get("issues", ""))
-        return max(1, min(5, score)), issues
-    except (ValueError, _json.JSONDecodeError):
-        return 3, "eval_parse_failed"
+    raw = await llm.adescribe(prompt, system=_DESC_EVAL_SYSTEM, max_tokens=300)
+    score, issues = _parse_eval_response(raw)
+    return (3, issues) if score is None else (score, issues)
 
 
 def _generate_description(module: ParsedModule) -> str:
