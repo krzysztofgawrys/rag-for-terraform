@@ -11,6 +11,7 @@ API keys (``trag_*``) work in all modes for programmatic access (MCP, CI/CD).
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -74,6 +75,56 @@ async def _get_alb_public_key(kid: str, region: str) -> Any:
     key = load_pem_public_key(resp.content)
     _alb_key_cache[kid] = (key, now)
     return key
+
+
+_cognito_key_cache: dict[str, tuple[Any, float]] = {}  # kid → (key, fetched_at)
+
+
+async def _get_cognito_public_key(kid: str, region: str, pool_id: str) -> Any:
+    """Fetch (and cache) the Cognito user-pool JWKS signing key for *kid*."""
+    now = time.monotonic()
+    cached = _cognito_key_cache.get(kid)
+    if cached and now - cached[1] < _ALB_KEY_TTL:
+        return cached[0]
+
+    import httpx
+    url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/jwks.json"
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        resp = await client.get(url, timeout=5)
+        resp.raise_for_status()
+
+    from jwt.algorithms import RSAAlgorithm
+    for jwk in resp.json().get("keys", []):
+        if jwk.get("kid") == kid:
+            key = RSAAlgorithm.from_jwk(json.dumps(jwk))
+            _cognito_key_cache[kid] = (key, now)
+            return key
+    raise ValueError(f"Cognito JWKS has no key for kid={kid}")
+
+
+async def _groups_from_cognito_access_token(access_token: str) -> list[str]:
+    """Return groups from a Cognito access token AFTER verifying its signature.
+
+    Never trusts an unverified token: returns [] when the token is absent, the
+    pool is unconfigured, or verification fails. Closes the role-escalation
+    vector where a forged x-amzn-oidc-accesstoken could inject cognito:groups
+    (this path previously decoded with verify_signature=False).
+    """
+    settings = get_settings()
+    pool_id = settings.cognito_user_pool_id
+    if not access_token or not pool_id:
+        return []
+    try:
+        kid = jwt.get_unverified_header(access_token)["kid"]
+        pub_key = await _get_cognito_public_key(kid, settings.sso_region, pool_id)
+        claims = jwt.decode(
+            access_token, pub_key, algorithms=["RS256"],
+            issuer=f"https://cognito-idp.{settings.sso_region}.amazonaws.com/{pool_id}",
+        )
+        return _extract_groups(claims)
+    except Exception:
+        log.warning("cognito_access_token_verify_failed", exc_info=True)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -214,18 +265,9 @@ async def get_current_user(
             # x-amzn-oidc-accesstoken (Cognito access token) has cognito:groups.
             groups = _extract_groups(claims)
             if not groups:
-                access_token = request.headers.get("x-amzn-oidc-accesstoken", "")
-                if access_token:
-                    try:
-                        access_claims = jwt.decode(
-                            access_token,
-                            options={"verify_signature": False, "verify_iss": True, "verify_exp": True},
-                            issuer=f"https://cognito-idp.{settings.sso_region}.amazonaws.com/{settings.cognito_user_pool_id}" if settings.cognito_user_pool_id else None,
-                            algorithms=["RS256"],
-                        )
-                        groups = _extract_groups(access_claims)
-                    except Exception:
-                        log.warning("sso_access_token_decode_failed", exc_info=True)
+                groups = await _groups_from_cognito_access_token(
+                    request.headers.get("x-amzn-oidc-accesstoken", "")
+                )
             role = _resolve_sso_role(groups)
             user = await _upsert_sso_user(
                 db, claims["sub"], claims.get("email", ""),
@@ -386,18 +428,9 @@ class AuthMiddleware:
                 claims = jwt.decode(alb_token, pub_key, algorithms=["ES256"])
                 groups = _extract_groups(claims)
                 if not groups:
-                    access_token = headers.get(b"x-amzn-oidc-accesstoken", b"").decode()
-                    if access_token:
-                        try:
-                            access_claims = jwt.decode(
-                                access_token,
-                                options={"verify_signature": False, "verify_iss": True, "verify_exp": True},
-                                issuer=f"https://cognito-idp.{settings.sso_region}.amazonaws.com/{settings.cognito_user_pool_id}" if settings.cognito_user_pool_id else None,
-                                algorithms=["RS256"],
-                            )
-                            groups = _extract_groups(access_claims)
-                        except Exception:
-                            pass
+                    groups = await _groups_from_cognito_access_token(
+                        headers.get(b"x-amzn-oidc-accesstoken", b"").decode()
+                    )
                 role = _resolve_sso_role(groups)
                 if role in self.allowed_roles:
                     structlog.contextvars.bind_contextvars(

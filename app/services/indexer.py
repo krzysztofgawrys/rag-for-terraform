@@ -513,8 +513,26 @@ def _is_subsequence(needle: list[str], haystack: list[str]) -> bool:
 _BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "[::1]"}
 
 
+def _is_private_172(host: str) -> bool:
+    """True for the private 172.16.0.0/12 range (not public 172.x hosts)."""
+    parts = host.split(".")
+    if len(parts) >= 2 and parts[0] == "172":
+        try:
+            return 16 <= int(parts[1]) <= 31
+        except ValueError:
+            return False
+    return False
+
+
 def _validate_repo_url(repo_url: str) -> None:
-    """Reject dangerous git clone URLs (file://, internal hosts, metadata)."""
+    """Reject dangerous git clone URLs.
+
+    Single choke-point for EVERY clone path (webhook, /index/, reindex,
+    consumer) since it runs inside _clone_or_pull. Two layers:
+      1. blocklist - bad protocols + loopback / link-local / RFC-1918 metadata
+      2. allowlist - when ``webhook_allowed_hosts`` is set, the host MUST match
+         (the positive SSRF control; the /index/ route had only the blocklist).
+    """
     url_lower = repo_url.lower().strip()
     if url_lower.startswith("file://") or url_lower.startswith("ftp://"):
         raise ValueError(f"Blocked protocol in repo URL: {repo_url}")
@@ -523,10 +541,16 @@ def _validate_repo_url(repo_url: str) -> None:
     m = re.match(r"(?:git@|ssh://(?:[^@]+@)?)([^:/]+)", url_lower)
     if not m:
         m = re.match(r"https?://([^/:]+)", url_lower)
-    if m:
-        host = m.group(1)
-        if host in _BLOCKED_HOSTS or host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
-            raise ValueError(f"Blocked internal host in repo URL: {host}")
+    host = m.group(1) if m else ""
+    if not host:
+        raise ValueError(f"Could not parse host from repo URL: {repo_url}")
+    if (host in _BLOCKED_HOSTS or host.startswith("[")
+            or host.startswith("10.") or host.startswith("192.168.")
+            or host.startswith("169.254.") or _is_private_172(host)):
+        raise ValueError(f"Blocked internal host in repo URL: {host}")
+    allowed = {h.strip().lower() for h in settings.webhook_allowed_hosts.split(",") if h.strip()}
+    if allowed and host not in allowed:
+        raise ValueError(f"Repo host not in clone allowlist: {host}")
 
 
 def _clone_or_pull(repo_url: str, branch: str,
