@@ -125,32 +125,27 @@ def embed_query(query: str, query_type: str = "search") -> list[float]:
 
 def _build_embedding_text(module: ParsedModule, description: str) -> str:
     """
-    Combine semantic description + metadata + code snippet.
-    LLM-generated description significantly improves search quality.
+    Build the text to embed, DESCRIPTION-FIRST and description-dominated.
+
+    The LLM description is the human-search-quality signal, so it leads. The
+    boilerplate (full variable list with per-var docs, raw code) is capped so it
+    cannot drown out the description for near-identical modules where only the
+    description discriminates - e.g. the 58 per-service security-group presets,
+    which share ~73 generic variables and near-identical generated code. The old
+    text was ~90% shared boilerplate and ~10% description, which roughly halved
+    the discriminating cosine similarity (measured: 0.26 full vs 0.55 desc-only).
+    Variable/output NAMES are kept (cheap signal) but their per-field docs and
+    the 5000-char code dump are not.
     """
-    var_lines = "\n".join(
-        f"  - {name} ({cfg.get('type','any')})"
-        + (f": {cfg['description']}" if cfg.get("description") else "")
-        for name, cfg in module.variables.items()
-    )
-    out_lines = "\n".join(
-        f"  - {name}" + (f": {cfg['description']}" if cfg.get("description") else "")
-        for name, cfg in module.outputs.items()
-    )
+    var_names = ", ".join(list(module.variables.keys())[:25])
+    out_names = ", ".join(list(module.outputs.keys())[:20])
+    return f"""{description}
 
-    return f"""
-Module: {module.module_name}
-Repository: {module.repo}
-Tags: {', '.join(module.tags)}
-Resources: {', '.join(set(module.resources))}
-Description: {description}
-
-Input variables:
-{var_lines or '  (none)'}
-
-Outputs:
-{out_lines or '  (none)'}
+Module: {module.module_name} ({module.repo}/{module.module_path})
+Tags: {', '.join(module.tags) or 'none'}
+Resources: {', '.join(set(module.resources)) or 'none'}
+Key variables: {var_names or 'none'}
+Outputs: {out_names or 'none'}
 
 Code excerpt:
-{module.raw_code[:5000]}
-""".strip()
+{module.raw_code[:1200]}""".strip()
