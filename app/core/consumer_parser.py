@@ -38,7 +38,7 @@ class ParsedUsage:
     region: str                     # guessed from path or var
     consumer_repo: str
     consumer_path: str              # relative file path
-    source_locator: str             # 'consumer-repo@sha:path/file.tf:Lstart-Lend'
+    source_locator: str             # 'consumer-repo@<sha7>:path/file.tf' (no line range)
 
 
 def parse_consumer_repo(
@@ -311,7 +311,7 @@ def build_compose_summary(usages: list[ParsedUsage]) -> str | None:
 
     summary = (
         f"Compose pattern: {file_path} (consumer repo: {consumer_repo}{location})\n"
-        f"Wires {len(usages)} module calls — {len(ordered_refs)} distinct modules.\n"
+        f"Wires {len(usages)} module calls - {len(ordered_refs)} distinct modules.\n"
         f"Instances: {instances}\n"
         f"Modules used:\n" + "\n".join(version_lines)
     )

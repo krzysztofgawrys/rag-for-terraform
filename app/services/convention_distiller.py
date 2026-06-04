@@ -108,7 +108,7 @@ def extract_assessment(text: str) -> tuple[str, str]:
     assessment found.
     """
     # Use re.search (finds first match) — not findall/finditer
-    m = re.search(r'\n?ASSESSMENT:\s*(\S+)', text, re.IGNORECASE)
+    m = re.search(r'\n?ASSESSMENT:\s*(\w+)', text, re.IGNORECASE)
     if m:
         assessment = m.group(1).upper()
         content = text[:m.start()].strip()

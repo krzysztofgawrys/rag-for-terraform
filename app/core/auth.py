@@ -119,7 +119,9 @@ def _decode_local_jwt(token: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def hash_api_key(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()
+    # SHA-256 is appropriate here: API keys are 256-bit random tokens
+    # (not user-chosen passwords), so brute-force is infeasible.
+    return hashlib.sha256(key.encode()).hexdigest()  # nosec
 
 
 def generate_api_key() -> str:

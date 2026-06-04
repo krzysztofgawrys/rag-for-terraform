@@ -36,25 +36,23 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eval_scoring import (  # noqa: E402
+    QueryCase,
+    ScoreResult,
+    score_case,
+    case_from_entry,
+    mean_reciprocal_rank,
+)
 
 DEFAULT_URL = "http://localhost:8000"
 DEFAULT_FIXTURE = Path(__file__).parent / "eval_queries.yaml"
-
-
-@dataclass
-class QueryCase:
-    query: str
-    query_type: str = "compose"
-    expected_refs: list[str] = field(default_factory=list)
-    top_k: int = 5
-    match: str = "any"  # "any" or "all"
-    description: str = ""
 
 
 @dataclass
@@ -64,6 +62,9 @@ class QueryResult:
     hit: bool
     matched_refs: list[str]
     missed_refs: list[str]
+    forbidden_hits: list[str]
+    first_match_rank: int | None
+    reciprocal_rank: float
     latency_ms: int
     error: str | None = None
 
@@ -79,19 +80,7 @@ def load_fixture(path: Path) -> list[QueryCase]:
     for i, entry in enumerate(raw):
         if not isinstance(entry, dict):
             raise ValueError(f"Entry {i} is not a dict")
-        if "query" not in entry:
-            raise ValueError(f"Entry {i} missing 'query' field")
-        if "expected_refs" not in entry or not entry["expected_refs"]:
-            raise ValueError(f"Entry {i} missing 'expected_refs'")
-
-        cases.append(QueryCase(
-            query=entry["query"],
-            query_type=entry.get("query_type", "compose"),
-            expected_refs=entry["expected_refs"],
-            top_k=entry.get("top_k", 5),
-            match=entry.get("match", "any"),
-            description=entry.get("description", ""),
-        ))
+        cases.append(case_from_entry(entry, index=i))
     return cases
 
 
@@ -121,6 +110,9 @@ def run_query(base_url: str, case: QueryCase,
                 hit=False,
                 matched_refs=[],
                 missed_refs=case.expected_refs,
+                forbidden_hits=[],
+                first_match_rank=None,
+                reciprocal_rank=0.0,
                 latency_ms=latency_ms,
                 error=f"HTTP {resp.status_code}: {resp.text[:200]}",
             )
@@ -134,29 +126,28 @@ def run_query(base_url: str, case: QueryCase,
             hit=False,
             matched_refs=[],
             missed_refs=case.expected_refs,
+            forbidden_hits=[],
+            first_match_rank=None,
+            reciprocal_rank=0.0,
             latency_ms=latency_ms,
             error=str(exc),
         )
 
-    # Build returned refs as repo/module_path for comparison
     returned_refs = [
         f"{s['repo']}/{s['module_path']}" for s in data.get("sources", [])
     ]
 
-    matched = [r for r in case.expected_refs if r in returned_refs]
-    missed = [r for r in case.expected_refs if r not in returned_refs]
-
-    if case.match == "all":
-        hit = len(missed) == 0
-    else:
-        hit = len(matched) > 0
+    sr = score_case(case, returned_refs)
 
     return QueryResult(
         case=case,
         returned_refs=returned_refs,
-        hit=hit,
-        matched_refs=matched,
-        missed_refs=missed,
+        hit=sr.hit,
+        matched_refs=sr.matched_refs,
+        missed_refs=sr.missed_refs,
+        forbidden_hits=sr.forbidden_hits,
+        first_match_rank=sr.first_match_rank,
+        reciprocal_rank=sr.reciprocal_rank,
         latency_ms=latency_ms,
     )
 
@@ -172,10 +163,20 @@ def print_report(results: list[QueryResult], as_json: bool = False):
         sum(r.latency_ms for r in results) // total if total else 0
     )
 
-    # Per-ref recall: across all queries, how many expected refs were found?
     all_expected = sum(len(r.case.expected_refs) for r in results)
     all_matched = sum(len(r.matched_refs) for r in results)
     ref_recall = (all_matched / all_expected * 100) if all_expected else 0
+    forbidden_total = sum(len(r.forbidden_hits) for r in results)
+    mrr = mean_reciprocal_rank([
+        ScoreResult(
+            hit=r.hit,
+            matched_refs=r.matched_refs,
+            missed_refs=r.missed_refs,
+            forbidden_hits=r.forbidden_hits,
+            first_match_rank=r.first_match_rank,
+            reciprocal_rank=r.reciprocal_rank,
+        ) for r in results
+    ])
 
     summary = {
         "total_queries": total,
@@ -184,23 +185,29 @@ def print_report(results: list[QueryResult], as_json: bool = False):
         "errors": errors,
         "hit_rate_pct": round(hit_rate, 1),
         "ref_recall_pct": round(ref_recall, 1),
+        "mrr": round(mrr, 4),
+        "forbidden_violations": forbidden_total,
         "avg_latency_ms": avg_latency,
     }
 
     if as_json:
         detail = []
         for r in results:
-            detail.append({
+            entry = {
                 "query": r.case.query,
                 "query_type": r.case.query_type,
                 "description": r.case.description,
                 "hit": r.hit,
                 "matched_refs": r.matched_refs,
                 "missed_refs": r.missed_refs,
+                "forbidden_hits": r.forbidden_hits,
+                "first_match_rank": r.first_match_rank,
+                "reciprocal_rank": r.reciprocal_rank,
                 "returned_refs": r.returned_refs,
                 "latency_ms": r.latency_ms,
                 "error": r.error,
-            })
+            }
+            detail.append(entry)
         print(json.dumps({"summary": summary, "queries": detail}, indent=2))
         return
 
@@ -215,12 +222,16 @@ def print_report(results: list[QueryResult], as_json: bool = False):
         status = "HIT " if r.hit else "MISS"
         if r.error:
             status = "ERR "
+        rank_info = f"@{r.first_match_rank}" if r.first_match_rank else ""
         label = r.case.description or r.case.query[:50]
-        print(f"  {status}  [{r.latency_ms:>5}ms]  {label}")
+        print(f"  {status}  [{r.latency_ms:>5}ms]  {label} {rank_info}")
 
         if r.missed_refs:
             for ref in r.missed_refs:
                 print(f"          missing: {ref}")
+        if r.forbidden_hits:
+            for ref in r.forbidden_hits:
+                print(f"          FORBIDDEN present: {ref}")
         if r.error:
             print(f"          error: {r.error}")
 
@@ -228,6 +239,9 @@ def print_report(results: list[QueryResult], as_json: bool = False):
     print("-" * 70)
     print(f"  Queries:       {hits}/{total} hit ({hit_rate:.0f}%)")
     print(f"  Module recall: {all_matched}/{all_expected} refs found ({ref_recall:.0f}%)")
+    print(f"  MRR:           {mrr:.4f}")
+    if forbidden_total:
+        print(f"  Forbidden:     {forbidden_total} violations")
     print(f"  Avg latency:   {avg_latency}ms")
     if errors:
         print(f"  Errors:        {errors}")

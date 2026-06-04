@@ -1,0 +1,98 @@
+# Adversarial retrieval-eval fixtures.
+#
+# These exercise what the baseline eval_queries.yaml cannot: ranking QUALITY,
+# not just recall. The baseline asks "did the right module appear in top-K?";
+# at top_k=5 that passes even when the right module sits behind four wrong ones.
+# These cases tighten the screws with two new fields (see scripts/eval_scoring.py):
+#
+#   top_rank        - the expected ref must appear within the first N positions,
+#                     not merely somewhere in top_k. Use top_rank: 1 to demand
+#                     the correct module RANKS FIRST among near-duplicates.
+#   forbidden_refs  - refs that MUST NOT appear (within the rank window). The
+#                     testable form of "a deprecated/legacy module must not
+#                     outrank the current one".
+#
+# IMPORTANT: every module_ref below is a PLACEHOLDER. Replace them with your
+# real repo/module_path values, or these cases will all "miss" against your KB.
+# Run with the extended harness once scripts/eval_retrieval.py is wired to
+# scripts/eval_scoring.py (score_case + case_from_entry + the new fields).
+
+# ---------------------------------------------------------------------------
+# 1. Disambiguation among near-duplicate modules - the core use case.
+#    Many vpc-* modules look alike by name/description; only the right one
+#    must rank first for this intent. top_rank: 1 fails if a sibling wins.
+# ---------------------------------------------------------------------------
+- query: "VPC that attaches to an EXISTING transit gateway (do not create a new TGW)"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/networking/vpc-tgw-attach"
+  top_k: 8
+  top_rank: 1
+  match: all
+  description: "near-dup disambiguation: must outrank vpc-tgw-create and plain vpc"
+
+- query: "egress-only VPC for a private workload, no NAT gateway"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/networking/vpc-egress-only"
+  top_k: 8
+  top_rank: 2
+  match: all
+  description: "must beat the full-NAT vpc variants on a semantic distinction"
+
+# ---------------------------------------------------------------------------
+# 2. Negative / deprecation guards - popularity must not beat correctness.
+#    The legacy module may be the most-used (highest evidence_count), so a
+#    usage-driven tie-break could surface it. It must NOT win.
+# ---------------------------------------------------------------------------
+- query: "S3 bucket with encryption and versioning"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/storage/s3"          # the current, maintained module
+  forbidden_refs:
+    - "terraform-modules/storage/s3-legacy"   # deprecated; popular but wrong
+  top_k: 5
+  top_rank: 3
+  match: all
+  description: "deprecated s3-legacy must not appear in the top 3"
+
+- query: "IAM role for an ECS task"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/iam/ecs-task-role"
+  forbidden_refs:
+    - "terraform-modules/iam/role-wildcard"   # over-permissive, must never surface here
+  top_k: 5
+  top_rank: 3
+  match: all
+  description: "the wildcard-permission role must not be recommended for a task role"
+
+# ---------------------------------------------------------------------------
+# 3. Multi-module stack with ranking discipline - both pieces, near the top.
+# ---------------------------------------------------------------------------
+- query: "ECS Fargate service behind an ALB, using our existing cluster"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/ecs/service"
+    - "terraform-modules/ecs/alb"
+  forbidden_refs:
+    - "terraform-modules/ecs/cluster"         # 'existing cluster' -> must NOT propose creating one
+  top_k: 8
+  top_rank: 4
+  match: all
+  description: "both service+alb in top 4; cluster module must not be pulled in"
+
+# ---------------------------------------------------------------------------
+# 4. Pure negative - a forbidden-only assertion needs one expected anchor too
+#    (the scorer requires at least one expected ref to register a 'hit').
+# ---------------------------------------------------------------------------
+- query: "simple static website on S3"
+  query_type: compose
+  expected_refs:
+    - "terraform-modules/storage/s3-website"
+  forbidden_refs:
+    - "terraform-modules/storage/s3-legacy"
+  top_k: 5
+  top_rank: 2
+  match: all
+  description: "static-site intent resolves to s3-website, never the legacy bucket"
